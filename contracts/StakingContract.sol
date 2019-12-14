@@ -16,24 +16,36 @@ contract StakingContract is Pausable {
 
     event StakeWithdrawn(address indexed beneficiary, uint256 amount);
 
-    struct Checkpoint {
+    struct BaseRewardCheckpoint {
 
+    }
+
+    struct StakeDeposit {
+        uint256 amount;
+        uint256 startDate;
     }
 
     struct StakingLimit {
-        uint256 initialStakingLimit;
-        uint256 daysInterval;
-        uint256 increaseAmount;
-        uint256 currentAmount;
         uint256 maxAmount;
-        bool reachedMaxCap;
+        uint256 initialAmount;
+        uint256 daysInterval;
+        uint256 maxIntervals;
     }
 
-    StakingLimit private stakingLimit;
     IERC20 public token;
-    uint256 public currentTotalStake;
-    uint256 public launchMoment;
     Status public currentStatus;
+    StakingLimit private stakingLimit;
+
+    uint256 public launchMoment;
+    uint256 public currentTotalStake;
+    mapping (address => StakeDeposit) public accountStakes;
+
+    modifier guardMaxStakingLimit(uint256 stakedAmount)
+    {
+        uint256 resultedStakedAmount = currentTotalStake.add(stakeAmount);
+        require(resultedStakedAmount <= computeCurrentStakingLimit(), "[Stake Limit] Your deposit would exceed the current staking limit");
+        _;
+    }
 
     // PUBLIC
     constructor(address _token)
@@ -44,14 +56,27 @@ contract StakingContract is Pausable {
         currentStatus = Status.Deployed;
     }
 
-    function depositStake()
+    function deposit(uint256 amount)
     whenNotPaused
+    guardMaxStakingLimit(amount)
     public
+    {
+        require(token.allowance(msg.sender, address(this)) >= amount, "[ERC20] Not enough allowance");
+
+        require(token.transferFrom(msg.sender, address(this), amount), "[Transfer] Something went wrong during the token transfer");
+
+        accountStakes[msg.sender] = StakeDeposit(amount, now);
+        emit StakeDeposited(msg.sender, amount);
+    }
+
+    function initiateWithdrawal()
+    whenNotPaused
+    external
     {
 
     }
 
-    function withdrawStake()
+    function executeWithdrawal()
     whenNotPaused
     external
     {
@@ -63,7 +88,6 @@ contract StakingContract is Pausable {
     view
     returns (uint256)
     {
-        // compute current staking limit
         return computeCurrentStakingLimit();
     }
 
@@ -75,13 +99,17 @@ contract StakingContract is Pausable {
         return 2;
     }
 
-    function setupStakingLimit()
+    function setupStakingLimit(uint256 maxAmount, uint256 initialAmount, uint256 daysInterval)
     external
     onlyOwner
     whenPaused
     {
         require(currentStatus == Status.Deployed, '[Lifecycle] Staking limits are already set');
+
+        uint256 maxIntervals = maxAmount.div(initialAmount);
         // set the staking limits
+        stakingLimit = StakingLimit(maxAmount, initialAmount, daysInterval, maxIntervals);
+
         currentStatus = Status.StakingLimitSetup;
     }
 
@@ -118,6 +146,8 @@ contract StakingContract is Pausable {
     returns (uint256)
     {
         // initialStakingLimit * ((now - launchMoment) / interval)
-        return 2;
+        uint256 intervalsPassed = ((now - launchMoment) * 1 days) / stakingLimit.daysInterval;
+
+        return initialLimit.mul(intervalsPassed.min(stakingLimit.maxIntervals));
     }
 }
