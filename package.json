@@ -1,0 +1,20 @@
+{
+  "name": "staking-contract",
+  "version": "1.0.0",
+  "description": "Solidity contract for the Elrond pre-staking process",
+  "main": "truffle-config.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "truffle test"
+  },
+  "author": "Nicolae Oprisan",
+  "license": "JIT",
+  "dependencies": {
+    "@openzeppelin/contracts": "^2.4.0"
+  },
+  "devDependencies": {
+    "@openzeppelin/test-helpers": "^0.5.4"
+  }
+}
