@@ -7,11 +7,14 @@ import "./libs/math/Math.sol";
 
 contract StakingContract is Pausable {
 
-    using Math, SafeMath for uint256;
+    using SafeMath for uint256;
+    using Math for uint256;
 
-    event StakeDeposited();
+    enum Status {Deployed, StakingLimitSetup, RewardsSetup, RewardsDisabled}
 
-    event StakeWithdrawn();
+    event StakeDeposited(address indexed staker, uint256 amount);
+
+    event StakeWithdrawn(address indexed beneficiary, uint256 amount);
 
     struct Checkpoint {
 
@@ -30,6 +33,7 @@ contract StakingContract is Pausable {
     IERC20 public token;
     uint256 public currentTotalStake;
     uint256 public launchMoment;
+    Status public currentStatus;
 
     // PUBLIC
     constructor(address _token)
@@ -37,6 +41,7 @@ contract StakingContract is Pausable {
     {
         token = IERC20(_token);
         launchMoment = now;
+        currentStatus = Status.Deployed;
     }
 
     function depositStake()
@@ -62,13 +67,46 @@ contract StakingContract is Pausable {
         return computeCurrentStakingLimit();
     }
 
-    function getCurrentReward
+    function getCurrentReward(address staker)
+    external
+    view
+    returns (uint256)
+    {
+        return 2;
+    }
+
+    function setupStakingLimit()
+    external
+    onlyOwner
+    whenPaused
+    {
+        require(currentStatus == Status.Deployed, '[Lifecycle] Staking limits are already set');
+        // set the staking limits
+        currentStatus = Status.StakingLimitSetup;
+    }
+
+
+    function setupRewards()
+    external
+    onlyOwner
+    whenPaused
+    {
+        require(currentStatus == Status.StakingLimitSetup, '[Lifecycle] Rewards are already set');
+        currentStatus = Status.RewardsSetup;
+    }
+
+    function disableRewards(uint256 fromWhen)
+    external
+    onlyOwner
+    {
+        currentStatus = Status.RewardsDisabled;
+    }
 
     // INTERNAL
     function computeReward(address staker)
     private
     view
-    returns(uint256)
+    returns (uint256)
     {
         // compute the reward
         return 2;
