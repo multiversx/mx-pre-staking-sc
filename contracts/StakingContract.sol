@@ -26,7 +26,9 @@ contract StakingContract is Pausable, ReentrancyGuard {
     struct StakeDeposit {
         uint256 amount;
         uint256 startDate;
-        uint256 initiateWithdrawalDate;
+        uint256 endDate;
+        uint256 startCheckpointIndex;
+        uint256 endCheckpointIndex;
         bool exists;
     }
 
@@ -40,7 +42,8 @@ contract StakingContract is Pausable, ReentrancyGuard {
 
     struct BaseRewardCheckpoint {
         uint256 baseRewardIndex;
-        uint256 timestamp;
+        uint256 startTimestamp;
+        uint256 endTimestamp;
         uint256 fromBlock;
     }
 
@@ -113,6 +116,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
         StakeDeposit storage stakeDeposit = accountStakes[msg.sender];
         stakeDeposit.amount = stakeDeposit.amount.add(amount);
         stakeDeposit.startDate = now;
+        stakeDeposit.startCheckpointIndex = baseRewardHistory.length - 1;
         stakeDeposit.exists = true;
 
         currentTotalStake = currentTotalStake.add(amount);
@@ -130,9 +134,10 @@ contract StakingContract is Pausable, ReentrancyGuard {
     {
         StakeDeposit storage stakeDeposit = accountStakes[msg.sender];
         require(stakeDeposit.exists, "[Initiate Withdrawal] There is no stake deposit for this account");
-        require(stakeDeposit.initiateWithdrawalDate != 0, "[Initiate Withdrawal] You already initiated the withdrawal");
+        require(stakeDeposit.endDate != 0, "[Initiate Withdrawal] You already initiated the withdrawal");
 
-        stakeDeposit.initiateWithdrawalDate = now;
+        stakeDeposit.endDate = now;
+        stakeDeposit.endCheckpointIndex = baseRewardHistory.length - 1;
         emit WithdrawInitiated(msg.sender, stakeDeposit.amount);
     }
 
@@ -141,10 +146,13 @@ contract StakingContract is Pausable, ReentrancyGuard {
     nonReentrant
     external
     {
-        // validate enough days have passed from initiating the withdrawal
-        uint256 reward = _computeReward(msg.sender);
         StakeDeposit storage stakeDeposit = accountStakes[msg.sender];
 
+        // validate enough days have passed from initiating the withdrawal
+        uint256 daysPassed = stakeDeposit.endDate.sub(stakeDeposit.startDate) * 1 days;
+        require(daysPassed >= stakingLimitConfig.unstakingPeriod, '[Withdraw] The unstaking period did not pass');
+
+        uint256 reward = _computeReward(stakeDeposit);
         uint256 amount = stakeDeposit.amount;
 
         stakeDeposit.amount = 0;
@@ -171,7 +179,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
     view
     returns (uint256)
     {
-        return _computeReward(msg.sender);
+        return _computeReward(accountStakes[msg.sender]);
     }
 
     // PUBLIC SETUP
@@ -181,14 +189,14 @@ contract StakingContract is Pausable, ReentrancyGuard {
     whenPaused
     {
         require(currentStatus == Status.StakingLimitSetup, '[Lifecycle] Staking limits are already set');
-        require(maxAmount % initialAmount == 0, '[Validation] maxAmount should be a multiple of initialAmount');
+        require(maxAmount.mod(initialAmount) == 0, '[Validation] maxAmount should be a multiple of initialAmount');
 
         uint256 maxIntervals = maxAmount.div(initialAmount);
         // set the staking limits
         stakingLimitConfig.maxAmount = stakingLimitConfig.maxAmount.add(maxAmount);
         stakingLimitConfig.initialAmount = stakingLimitConfig.initialAmount.add(initialAmount);
-        stakingLimitConfig.daysInterval = stakingLimitConfig.daysInterval.add(daysInterval);
-        stakingLimitConfig.unstakingPeriod = stakingLimitConfig.unstakingPeriod.add(unstakingPeriod);
+        stakingLimitConfig.daysInterval = stakingLimitConfig.daysInterval.add(daysInterval) * 1 days;
+        stakingLimitConfig.unstakingPeriod = stakingLimitConfig.unstakingPeriod.add(unstakingPeriod) * 1 days;
         stakingLimitConfig.maxIntervals = maxIntervals;
 
         currentStatus = Status.RewardsSetup;
@@ -243,7 +251,15 @@ contract StakingContract is Pausable, ReentrancyGuard {
         return stakingLimitConfig.initialAmount.mul(intervalsPassed.min(stakingLimitConfig.maxIntervals));
     }
 
-    function _computeReward(address)
+    function _getIntervalsPassed()
+    private
+    view
+    returns (uint256)
+    {
+        return ((now - launchTimestamp) * 1 days) / stakingLimitConfig.daysInterval;
+    }
+
+    function _computeReward(StakeDeposit storage stakeDeposit)
     private
     view
     returns (uint256)
@@ -252,8 +268,47 @@ contract StakingContract is Pausable, ReentrancyGuard {
             return 0;
         }
 
-        // compute the reward
-        return 2;
+        uint256 stakingPeriod = (stakeDeposit.endDate - stakeDeposit.startDate) * 1 days;
+        uint256 weightedAverageBaseReward = _computeWeightedAverageBaseReward(stakeDeposit, stakingPeriod);
+        uint256 multiplier = stakingPeriod.mul(rewardConfig.multiplier).div(100);
+        uint256 baseReward = weightedAverageBaseReward.add(multiplier);
+
+        return stakeDeposit.amount.mul(baseReward).div(100);
+    }
+
+    function _computeWeightedAverageBaseReward(StakeDeposit memory stakeDeposit, uint256 stakingPeriod)
+    private
+    view
+    returns (uint256)
+    {
+        // Computing the first segment base reward
+        // User could deposit in the middle of the segment so we need to get the segment from which the user deposited
+        // to the moment the base reward changes
+        uint256 segmentStakingPeriod = (baseRewardHistory[stakeDeposit.startCheckpointIndex].endTimestamp - stakeDeposit.startDate) * 1 days;
+        uint256 dailyRewardRate = _baseRewardFromHistoryIndex(stakeDeposit.startCheckpointIndex).anualRewardRate.div(365);
+        uint256 segmentBaseReward = segmentStakingPeriod.mul(dailyRewardRate);
+        uint256 baseRewardSum = segmentBaseReward;
+
+        if (stakeDeposit.startCheckpointIndex == stakeDeposit.endCheckpointIndex) {
+            return baseRewardSum.div(stakingPeriod);
+        }
+
+        // Starting from the second checkpoint because the first one is already computed
+        for (uint256 i = stakeDeposit.startCheckpointIndex + 1; i < stakeDeposit.endCheckpointIndex; i++) {
+            segmentStakingPeriod = (baseRewardHistory[i].endTimestamp - baseRewardHistory[i].startTimestamp) * 1 days;
+            dailyRewardRate = _baseRewardFromHistoryIndex(i).anualRewardRate.div(365);
+            segmentBaseReward = dailyRewardRate.mul(segmentStakingPeriod);
+            baseRewardSum = baseRewardSum.add(segmentBaseReward);
+        }
+
+        // Computing the base reward for the last segment
+        // days between start timestamp of the last checkpoint to the moment he initialized the withdrawal
+        segmentStakingPeriod = (stakeDeposit.endDate - baseRewardHistory[stakeDeposit.endCheckpointIndex].startTimestamp) * 1 days;
+        dailyRewardRate = _baseRewardFromHistoryIndex(stakeDeposit.endCheckpointIndex).anualRewardRate.div(365);
+        segmentBaseReward = segmentStakingPeriod.mul(dailyRewardRate);
+        baseRewardSum = baseRewardSum.add(segmentBaseReward);
+
+        return baseRewardSum.div(stakingPeriod);
     }
 
     function _addBaseReward(uint256 anualRewardRate, uint256 lowerBound, uint256 upperBound)
@@ -263,30 +318,13 @@ contract StakingContract is Pausable, ReentrancyGuard {
         rewardConfig.upperBounds.push(upperBound);
     }
 
-    function _getIntervalsPassed()
-    private
-    view
-    returns (uint256)
-    {
-        return ((now - launchTimestamp) * 1 days) / stakingLimitConfig.daysInterval;
-    }
-
-    function _getBaseRewardCheckpointsFrom(uint256)
-    private
-    view
-    returns (BaseRewardCheckpoint[] memory)
-    {
-
-        return baseRewardHistory;
-    }
-
     function _updateBaseRewardHistory()
     private
     {
         (, BaseReward memory currentBaseReward) = _currentBaseReward();
 
         // Do nothing if currentTotalStake is in the current base reward bounds
-        if(currentBaseReward.lowerBound <= currentTotalStake  && currentTotalStake <= currentBaseReward.upperBound) {
+        if (currentBaseReward.lowerBound <= currentTotalStake && currentTotalStake <= currentBaseReward.upperBound) {
             return;
         }
 
@@ -294,7 +332,11 @@ contract StakingContract is Pausable, ReentrancyGuard {
         (uint256 index,) = _computeCurrentBaseReward();
 
         if (oldCheckPoint.fromBlock < block.number) {
-            baseRewardHistory.push(BaseRewardCheckpoint(index, now, block.number));
+            oldCheckPoint.endTimestamp = now;
+            BaseRewardCheckpoint storage newCheckpoint = baseRewardHistory[baseRewardHistory.length];
+            newCheckpoint.baseRewardIndex = index;
+            newCheckpoint.startTimestamp = now;
+            newCheckpoint.fromBlock = block.number;
         } else {
             oldCheckPoint.baseRewardIndex = index;
         }
@@ -309,6 +351,14 @@ contract StakingContract is Pausable, ReentrancyGuard {
         uint256 currentBaseRewardIndex = (_lastBaseRewardCheckpoint()).baseRewardIndex;
 
         return (currentBaseRewardIndex, rewardConfig.baseRewards[currentBaseRewardIndex]);
+    }
+
+    function _baseRewardFromHistoryIndex(uint256 index)
+    private
+    view
+    returns (BaseReward memory)
+    {
+        return rewardConfig.baseRewards[baseRewardHistory[index].baseRewardIndex];
     }
 
     function _lastBaseRewardCheckpoint()
@@ -345,7 +395,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
         require(anualRewardRates.length == lowerBounds.length && lowerBounds.length == upperBounds.length,
             '[Validation] All parameters must have the same number of elements'
         );
-        require((multiplier < 100) && (100 % multiplier == 0),
+        require((multiplier < 100) && (uint256(100).mod(multiplier) == 0),
             '[Validation] Multiplier should be smaller than 100 and divide it equally'
         );
     }
