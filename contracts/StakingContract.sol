@@ -6,12 +6,14 @@ import "./libs/utils/Address.sol";
 import "./libs/utils/ReentrancyGuard.sol";
 import "./libs/lifecycle/Pausable.sol";
 import "./token/ERC20/IERC20.sol";
+import "./libs/utils/Arrays.sol";
 
 contract StakingContract is Pausable, ReentrancyGuard {
 
     using SafeMath for uint256;
     using Math for uint256;
     using Address for address;
+    using Arrays for uint256[];
 
     enum Status {StakingLimitSetup, RewardsSetup, Running, RewardsDisabled}
 
@@ -44,11 +46,13 @@ contract StakingContract is Pausable, ReentrancyGuard {
 
     struct BaseReward {
         uint256 anualRewardRate;
-        uint256 minimumTotalStaked;
+        uint256 lowerBound;
+        uint256 upperBound;
     }
 
     struct RewardConfig {
         BaseReward[] baseRewards;
+        uint256[] upperBounds;
         uint256 multiplier; // percent of the base reward applicable
     }
 
@@ -101,21 +105,22 @@ contract StakingContract is Pausable, ReentrancyGuard {
     function deposit(uint256 amount)
     whenNotPaused
     guardMaxStakingLimit(amount)
+    nonReentrant
     public
     {
         require(!accountStakes[msg.sender].exists, "[Deposit] You already have a stake");
-
-        // Transfer the Tokens to this contract
-        require(token.transferFrom(msg.sender, address(this), amount), "[Deposit] Something went wrong during the token transfer");
 
         StakeDeposit storage stakeDeposit = accountStakes[msg.sender];
         stakeDeposit.amount = stakeDeposit.amount.add(amount);
         stakeDeposit.startDate = now;
         stakeDeposit.exists = true;
-        emit StakeDeposited(msg.sender, amount);
 
         currentTotalStake = currentTotalStake.add(amount);
         _updateBaseRewardHistory();
+
+        // Transfer the Tokens to this contract
+        require(token.transferFrom(msg.sender, address(this), amount), "[Deposit] Something went wrong during the token transfer");
+        emit StakeDeposited(msg.sender, amount);
     }
 
     function initiateWithdrawal()
@@ -161,12 +166,12 @@ contract StakingContract is Pausable, ReentrancyGuard {
         return _computeCurrentStakingLimit();
     }
 
-    function getCurrentReward(address account)
+    function getCurrentReward()
     external
     view
     returns (uint256)
     {
-        return rewardConfig.baseRewards[0].anualRewardRate;
+        return _computeReward(msg.sender);
     }
 
     // PUBLIC SETUP
@@ -176,6 +181,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
     whenPaused
     {
         require(currentStatus == Status.StakingLimitSetup, '[Lifecycle] Staking limits are already set');
+        require(maxAmount % initialAmount == 0, '[Validation] maxAmount should be a multiple of initialAmount');
 
         uint256 maxIntervals = maxAmount.div(initialAmount);
         // set the staking limits
@@ -183,28 +189,29 @@ contract StakingContract is Pausable, ReentrancyGuard {
         stakingLimitConfig.initialAmount = stakingLimitConfig.initialAmount.add(initialAmount);
         stakingLimitConfig.daysInterval = stakingLimitConfig.daysInterval.add(daysInterval);
         stakingLimitConfig.unstakingPeriod = stakingLimitConfig.unstakingPeriod.add(unstakingPeriod);
+        stakingLimitConfig.maxIntervals = maxIntervals;
 
         currentStatus = Status.RewardsSetup;
     }
 
-    function setupRewards(uint256 multiplier, uint256[] calldata anualRewardRates, uint256[] calldata minimumTotalStakes)
+    function setupRewards(
+        uint256 multiplier,
+        uint256[] calldata anualRewardRates,
+        uint256[] calldata lowerBounds,
+        uint256[] calldata upperBounds
+    )
     external
     onlyOwner
     whenPaused
     {
         require(currentStatus == Status.RewardsSetup, '[Lifecycle] Rewards are already set');
-        require(anualRewardRates.length > 0 && anualRewardRates.length == minimumTotalStakes.length,
-            '[Validation] RewardRates list should be equal to TotalStaked list'
-        );
-        require((multiplier < 100) && (100 % multiplier == 0),
-            '[Validation] Multiplier should be smaller than 100 and divide it equally'
-        );
+        _validateSetupRewardsParameters(multiplier, anualRewardRates, lowerBounds, upperBounds);
 
         // Setup rewards
         rewardConfig.multiplier = multiplier;
 
         for (uint256 i = 0; i < anualRewardRates.length; i++) {
-            _addBaseReward(anualRewardRates[i], minimumTotalStakes[i]);
+            _addBaseReward(anualRewardRates[i], lowerBounds[i], upperBounds[i]);
         }
 
         currentStatus = Status.Running;
@@ -214,6 +221,11 @@ contract StakingContract is Pausable, ReentrancyGuard {
     external
     onlyOwner
     {
+        require(
+            currentStatus == Status.Running || currentStatus == Status.RewardsDisabled,
+            "[Lifecycle] Contract does not have the setup complete"
+        );
+
         currentStatus = enabled ? Status.Running : Status.RewardsDisabled;
     }
 
@@ -236,14 +248,19 @@ contract StakingContract is Pausable, ReentrancyGuard {
     view
     returns (uint256)
     {
+        if (currentStatus == Status.RewardsDisabled) {
+            return 0;
+        }
+
         // compute the reward
         return 2;
     }
 
-    function _addBaseReward(uint256 anualRewardRate, uint256 minimumTotalStaked)
+    function _addBaseReward(uint256 anualRewardRate, uint256 lowerBound, uint256 upperBound)
     private
     {
-        rewardConfig.baseRewards.push(BaseReward(anualRewardRate, minimumTotalStaked));
+        rewardConfig.baseRewards.push(BaseReward(anualRewardRate, lowerBound, upperBound));
+        rewardConfig.upperBounds.push(upperBound);
     }
 
     function _getIntervalsPassed()
@@ -266,16 +283,19 @@ contract StakingContract is Pausable, ReentrancyGuard {
     function _updateBaseRewardHistory()
     private
     {
-        (uint256 currentBaseRewardIndex, BaseReward memory currentBaseReward) = _currentBaseReward();
+        (, BaseReward memory currentBaseReward) = _currentBaseReward();
 
-         // if currentTotalStake is not within current base reward bounds
-        //      compute new base reward
+        // Do nothing if currentTotalStake is in the current base reward bounds
+        if(currentBaseReward.lowerBound <= currentTotalStake  && currentTotalStake <= currentBaseReward.upperBound) {
+            return;
+        }
 
+        BaseRewardCheckpoint storage oldCheckPoint = _lastBaseRewardCheckpoint();
+        (uint256 index,) = _computeCurrentBaseReward();
 
-        if (currentBaseReward.fromBlock < block.number) {
-            //baseRewardHistory.push(BaseRewardCheckpoint(index, now, block.number));
+        if (oldCheckPoint.fromBlock < block.number) {
+            baseRewardHistory.push(BaseRewardCheckpoint(index, now, block.number));
         } else {
-            BaseRewardCheckpoint storage oldCheckPoint = _lastBaseRewardCheckpoint();
             oldCheckPoint.baseRewardIndex = index;
         }
     }
@@ -294,8 +314,39 @@ contract StakingContract is Pausable, ReentrancyGuard {
     function _lastBaseRewardCheckpoint()
     private
     view
-    returns (BaseRewardCheckpoint memory)
+    returns (BaseRewardCheckpoint storage)
     {
-        return baseRewardHistory[baseRewardHistory.length -1];
+        return baseRewardHistory[baseRewardHistory.length - 1];
+    }
+
+    function _computeCurrentBaseReward()
+    private
+    view
+    returns (uint256, BaseReward memory)
+    {
+        uint256 index = rewardConfig.upperBounds.findUpperBound(currentTotalStake);
+
+        return (index, rewardConfig.baseRewards[index]);
+    }
+
+    function _validateSetupRewardsParameters
+    (
+        uint256 multiplier,
+        uint256[] memory anualRewardRates,
+        uint256[] memory lowerBounds,
+        uint256[] memory upperBounds
+    )
+    private
+    pure
+    {
+        require(anualRewardRates.length > 0 && lowerBounds.length > 0 && upperBounds.length > 0,
+            '[Validation] All parameters'
+        );
+        require(anualRewardRates.length == lowerBounds.length && lowerBounds.length == upperBounds.length,
+            '[Validation] All parameters must have the same number of elements'
+        );
+        require((multiplier < 100) && (100 % multiplier == 0),
+            '[Validation] Multiplier should be smaller than 100 and divide it equally'
+        );
     }
 }
