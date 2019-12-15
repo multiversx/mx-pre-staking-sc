@@ -20,7 +20,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
     // EVENTS
     event StakeDeposited(address indexed account, uint256 amount);
     event WithdrawInitiated(address indexed account, uint256 amount);
-    event WithdrawExecuted(address indexed account, uint256 amount);
+    event WithdrawExecuted(address indexed account, uint256 amount, uint256 reward);
 
     // STRUCT DECLARATIONS
     struct StakeDeposit {
@@ -163,7 +163,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
 
         require(token.transfer(msg.sender, amount), "[Withdraw] Something went wrong while transferring your initial deposit");
         require(token.transferFrom(rewardsAddress, msg.sender, reward), "[Withdraw] Something went wrong while transferring your reward");
-        emit WithdrawExecuted(msg.sender, amount.add(reward));
+        emit WithdrawExecuted(msg.sender, amount, reward);
     }
 
     function getCurrentStakingLimit()
