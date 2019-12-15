@@ -1,20 +1,38 @@
 pragma solidity ^0.5.14;
 
 import "./libs/math/SafeMath.sol";
-import "./token/ERC20/IERC20.sol";
-import "./libs/lifecycle/Pausable.sol";
 import "./libs/math/Math.sol";
+import "./libs/utils/Address.sol";
+import "./libs/utils/ReentrancyGuard.sol";
+import "./libs/lifecycle/Pausable.sol";
+import "./token/ERC20/IERC20.sol";
 
-contract StakingContract is Pausable {
+contract StakingContract is Pausable, ReentrancyGuard {
 
     using SafeMath for uint256;
     using Math for uint256;
+    using Address for address;
 
-    enum Status {Deployed, StakingLimitSetup, RewardsSetup, RewardsDisabled}
+    enum Status {StakingLimitSetup, RewardsSetup, Running, RewardsDisabled}
 
     event StakeDeposited(address indexed account, uint256 amount);
     event WithdrawInitiated(address indexed account, uint256 amount);
     event WithdrawExecuted(address indexed account, uint256 amount);
+
+    struct StakeDeposit {
+        uint256 amount;
+        uint256 startDate;
+        uint256 initiateWithdrawalDate;
+        bool exists;
+    }
+
+    struct StakingLimitConfig {
+        uint256 maxAmount;
+        uint256 initialAmount;
+        uint256 daysInterval;
+        uint256 maxIntervals;
+        uint256 unstakingPeriod;
+    }
 
     struct BaseRewardCheckpoint {
         uint256 baseRewardIndex;
@@ -27,29 +45,15 @@ contract StakingContract is Pausable {
         uint256 minimumTotalStaked;
     }
 
-    struct Reward {
+    struct RewardConfig {
         BaseReward[] baseRewards;
         uint256 multiplier; // percent of the base reward applicable
     }
 
-    struct StakeDeposit {
-        uint256 amount;
-        uint256 startDate;
-        uint256 initiateWithdrawalDate;
-        bool exists;
-    }
-
-    struct StakingLimit {
-        uint256 maxAmount;
-        uint256 initialAmount;
-        uint256 daysInterval;
-        uint256 maxIntervals;
-        uint256 unstakingPeriod;
-    }
-
     IERC20 public token;
     Status public currentStatus;
-    StakingLimit private stakingLimit;
+    StakingLimitConfig private stakingLimitConfig;
+    RewardConfig public rewardConfig;
 
     address private rewardsAddress;
     uint256 public launchTimestamp;
@@ -59,9 +63,9 @@ contract StakingContract is Pausable {
     BaseRewardCheckpoint[] private baseRewardHistory;
 
     // MODIFIERS
-    modifier guardMaxStakingLimit(uint256 stakedAmount)
+    modifier guardMaxStakingLimit(uint256 amount)
     {
-        uint256 resultedStakedAmount = currentTotalStake.add(stakeAmount);
+        uint256 resultedStakedAmount = currentTotalStake.add(amount);
         require(resultedStakedAmount <= _computeCurrentStakingLimit(), "[Deposit] Your deposit would exceed the current staking limit");
         _;
     }
@@ -69,18 +73,25 @@ contract StakingContract is Pausable {
     modifier guardForPrematureWithdrawal()
     {
         uint256 intervalsPassed = _getIntervalsPassed();
-        require(intervalsPassed >= stakingLimit.maxIntervals, "[Withdraw] Not enough days passed");
+        require(intervalsPassed >= stakingLimitConfig.maxIntervals, "[Withdraw] Not enough days passed");
         _;
     }
 
-    // PUBLIC
-    constructor(address _token, address _fundAddress)
+    modifier onlyContract(address account)
+    {
+        require(account.isContract(), "[Validation] The address does not contain a contract");
+        _;
+    }
+
+    // PUBLIC FUNCTIONS
+    constructor(address _token, address _rewardsAddress)
+    onlyContract(_token)
     public
     {
         token = IERC20(_token);
-        rewardsAddress = _fundAddress;
+        rewardsAddress = _rewardsAddress;
         launchTimestamp = now;
-        currentStatus = Status.Deployed;
+        currentStatus = Status.StakingLimitSetup;
     }
 
     function deposit(uint256 amount)
@@ -94,10 +105,10 @@ contract StakingContract is Pausable {
         // Transfer the Tokens to this contract
         require(token.transferFrom(msg.sender, address(this), amount), "[Deposit] Something went wrong during the token transfer");
 
-        StakeDeposit storage deposit = accountStakes[msg.sender];
-        deposit.amount = deposit.amount.add(amount);
-        deposit.startDate = now;
-        deposit.exists = true;
+        StakeDeposit storage stakeDeposit = accountStakes[msg.sender];
+        stakeDeposit.amount = stakeDeposit.amount.add(amount);
+        stakeDeposit.startDate = now;
+        stakeDeposit.exists = true;
 
         currentTotalStake = currentTotalStake.add(amount);
 
@@ -109,27 +120,29 @@ contract StakingContract is Pausable {
     guardForPrematureWithdrawal
     external
     {
-        StakeDeposit storage deposit = accountStakes[msg.sender];
-        require(deposit.exists, "[Initiate Withdrawal] There is no stake deposit for this account");
-        require(deposit.initiateWithdrawalDate != 0, "[Initiate Withdrawal] You already initiated the withdrawal");
+        StakeDeposit storage stakeDeposit = accountStakes[msg.sender];
+        require(stakeDeposit.exists, "[Initiate Withdrawal] There is no stake deposit for this account");
+        require(stakeDeposit.initiateWithdrawalDate != 0, "[Initiate Withdrawal] You already initiated the withdrawal");
 
-        deposit.initiateWithdrawalDate = now;
-        emit WithdrawInitiated(msg.sender, deposit.amount);
+        stakeDeposit.initiateWithdrawalDate = now;
+        emit WithdrawInitiated(msg.sender, stakeDeposit.amount);
     }
 
     function executeWithdrawal()
     whenNotPaused
+    nonReentrant
     external
     {
         // validate enough days have passed from initiating the withdrawal
         uint256 reward = _computeReward(msg.sender);
-        StakeDeposit storage deposit = accountStakes[msg.sender];
+        StakeDeposit storage stakeDeposit = accountStakes[msg.sender];
 
-        require(token.transfer(msg.sender, deposit.amount), "[Withdraw] Something went wrong while transferring your initial deposit");
+        require(token.transfer(msg.sender, stakeDeposit.amount), "[Withdraw] Something went wrong while transferring your initial deposit");
         require(token.transferFrom(rewardsAddress, msg.sender, reward), "[Withdraw] Something went wrong while transferring your reward");
-        emit WithdrawExecuted(msg.sender, deposit.amount.add(reward));
+        emit WithdrawExecuted(msg.sender, stakeDeposit.amount.add(reward));
 
-        deposit = StakeDeposit(0, 0, 0, 0);
+        stakeDeposit.amount = 0;
+        stakeDeposit.exists = false;
     }
 
     function getCurrentStakingLimit()
@@ -145,7 +158,7 @@ contract StakingContract is Pausable {
     view
     returns (uint256)
     {
-        return 2;
+        return rewardConfig.baseRewards[0].anualRewardRate;
     }
 
     // PUBLIC SETUP
@@ -154,13 +167,13 @@ contract StakingContract is Pausable {
     onlyOwner
     whenPaused
     {
-        require(currentStatus == Status.Deployed, '[Lifecycle] Staking limits are already set');
+        require(currentStatus == Status.StakingLimitSetup, '[Lifecycle] Staking limits are already set');
 
         uint256 maxIntervals = maxAmount.div(initialAmount);
         // set the staking limits
-        stakingLimit = StakingLimit(maxAmount, initialAmount, daysInterval, maxIntervals, unstakingPeriod);
+        stakingLimitConfig = StakingLimitConfig(maxAmount, initialAmount, daysInterval, maxIntervals, unstakingPeriod);
 
-        currentStatus = Status.StakingLimitSetup;
+        currentStatus = Status.RewardsSetup;
     }
 
     function setupRewards()
@@ -168,12 +181,12 @@ contract StakingContract is Pausable {
     onlyOwner
     whenPaused
     {
-        require(currentStatus == Status.StakingLimitSetup, '[Lifecycle] Rewards are already set');
+        require(currentStatus == Status.RewardsSetup, '[Lifecycle] Rewards are already set');
 
         // Setup rewards
 
 
-        currentStatus = Status.RewardsSetup;
+        currentStatus = Status.Running;
     }
 
     function addBaseReward(uint256 anualRewardRate, uint256 minimumTotalStaked)
@@ -181,35 +194,37 @@ contract StakingContract is Pausable {
     onlyOwner
     whenPaused
     {
-        
+
     }
 
-    function disableRewards(uint256 fromWhen)
+    function toggleRewards(uint256 fromWhen, bool enabled)
     external
     onlyOwner
     {
-        currentStatus = Status.RewardsDisabled;
+        currentStatus = enabled ? Status.Running : Status.RewardsDisabled;
     }
 
     // INTERNAL
-    function _computeReward(address staker)
+    function _computeCurrentStakingLimit()
+    private
+    view
+    returns (uint256)
+    {
+        require(currentStatus == Status.Running, '[Lifecycle] Setup not complete');
+
+        uint256 intervalsPassed = _getIntervalsPassed();
+
+        // initialLimit * ((now - launchMoment) / interval)
+        return stakingLimitConfig.initialAmount.mul(intervalsPassed.min(stakingLimitConfig.maxIntervals));
+    }
+
+    function _computeReward(address)
     private
     view
     returns (uint256)
     {
         // compute the reward
         return 2;
-    }
-
-    function _computeCurrentStakingLimit()
-    private
-    view
-    returns (uint256)
-    {
-        uint256 intervalsPassed = _getIntervalsPassed();
-
-        // initialLimit * ((now - launchMoment) / interval)
-        return initialLimit.mul(intervalsPassed.min(stakingLimit.maxIntervals));
     }
 
     function _addBaseReward(uint256 anualRewardRate, uint256 minimumTotalStaked)
@@ -223,54 +238,26 @@ contract StakingContract is Pausable {
     view
     returns (uint256)
     {
-        return ((now - launchTimestamp) * 1 days) / stakingLimit.daysInterval;
+        return ((now - launchTimestamp) * 1 days) / stakingLimitConfig.daysInterval;
     }
 
-    function _getBaseRewardCheckpointAt(uint256 timestamp)
+    function _getBaseRewardCheckpointsFrom(uint256 )
     private
     view
-    returns (BaseRewardCheckpoint memory)
+    returns (BaseRewardCheckpoint[] memory)
     {
-        uint256 length = baseRewardHistory.length;
 
-        if (length == 0)
-            return 0;
-
-        // Some heuristics to avoid the binary search
-        if (timestamp >= baseRewardHistory[length - 1].timestamp)
-            return baseRewardHistory[length - 1];
-
-        if (timestamp < baseRewardHistory[0].fromBlock)
-            return 0;
-
-        // Binary search of the value in the array
-        uint256 min = 0;
-        uint256 max = length - 1;
-        while (max > min) {
-            uint256 mid = (max + min + 1) / 2;
-            if (baseRewardHistory[mid].fromBlock <= timestamp) {
-                min = mid;
-            } else {
-                max = mid - 1;
-            }
-        }
-
-        return baseRewardHistory[min];
+        return baseRewardHistory;
     }
 
-    /**
-    * @dev Function used to update the balances history and the total supply history.
-    * @param checkpoints The history of data being updated
-    * @param value The new number of tokens
-    */
     function _updateBaseRewardHistory()
     private
     {
-        uint256 (index) = _findCurrentBaseReward();
+        (uint256 index,) = _findCurrentBaseReward();
         uint256 length = baseRewardHistory.length;
 
         if ((length == 0) || (baseRewardHistory[length - 1].fromBlock < block.number)) {
-            checkpoints.push(BaseRewardCheckpoint(currentBaseRewardIndex, now, block.number));
+            baseRewardHistory.push(BaseRewardCheckpoint(index, now, block.number));
         } else {
             BaseRewardCheckpoint storage oldCheckPoint = baseRewardHistory[length - 1];
             oldCheckPoint.baseRewardIndex = index;
@@ -280,9 +267,9 @@ contract StakingContract is Pausable {
     function _findCurrentBaseReward()
     private
     view
-    returns (uint256 index, BaseReward baseReward)
+    returns (uint256 index, BaseReward storage baseReward)
     {
         // search for the current base reward from current total staked amount
-        return (0, BaseReward(0,0));
+        return (0, rewardConfig.baseRewards[0]);
     }
 }
