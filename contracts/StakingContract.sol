@@ -15,7 +15,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
     using Address for address;
     using Arrays for uint256[];
 
-    enum Status {StakingLimitSetup, RewardsSetup, Running, RewardsDisabled}
+    enum Status {Setup, Running, RewardsDisabled}
 
     // EVENTS
     event StakeDeposited(address indexed account, uint256 amount);
@@ -30,6 +30,11 @@ contract StakingContract is Pausable, ReentrancyGuard {
         uint256 startCheckpointIndex;
         uint256 endCheckpointIndex;
         bool exists;
+    }
+
+    struct SetupState {
+        bool staking;
+        bool rewards;
     }
 
     struct StakingLimitConfig {
@@ -63,6 +68,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
     IERC20 public token;
     Status public currentStatus;
 
+    SetupState private setupState;
     StakingLimitConfig private stakingLimitConfig;
     RewardConfig public rewardConfig;
 
@@ -94,6 +100,18 @@ contract StakingContract is Pausable, ReentrancyGuard {
         _;
     }
 
+    modifier onlyDuringSetup()
+    {
+        require(currentStatus == Status.Setup, '[Lifecycle] Setup is already done');
+        _;
+    }
+
+    modifier onlyAfterSetup()
+    {
+        require(currentStatus != Status.Setup, '[Lifecycle] Setup is not done');
+        _;
+    }
+
     // PUBLIC FUNCTIONS
     constructor(address _token, address _rewardsAddress)
     onlyContract(_token)
@@ -102,13 +120,14 @@ contract StakingContract is Pausable, ReentrancyGuard {
         token = IERC20(_token);
         rewardsAddress = _rewardsAddress;
         launchTimestamp = now;
-        currentStatus = Status.StakingLimitSetup;
+        currentStatus = Status.Setup;
     }
 
     function deposit(uint256 amount)
-    whenNotPaused
-    guardMaxStakingLimit(amount)
     nonReentrant
+    whenNotPaused
+    onlyAfterSetup
+    guardMaxStakingLimit(amount)
     public
     {
         require(!accountStakes[msg.sender].exists, "[Deposit] You already have a stake");
@@ -129,6 +148,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
 
     function initiateWithdrawal()
     whenNotPaused
+    onlyAfterSetup
     guardForPrematureWithdrawal
     external
     {
@@ -142,8 +162,9 @@ contract StakingContract is Pausable, ReentrancyGuard {
     }
 
     function executeWithdrawal()
-    whenNotPaused
     nonReentrant
+    whenNotPaused
+    onlyAfterSetup
     external
     {
         StakeDeposit storage stakeDeposit = accountStakes[msg.sender];
@@ -167,6 +188,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
     }
 
     function getCurrentStakingLimit()
+    onlyAfterSetup
     public
     view
     returns (uint256)
@@ -175,6 +197,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
     }
 
     function getCurrentReward()
+    onlyAfterSetup
     external
     view
     returns (uint256)
@@ -182,13 +205,22 @@ contract StakingContract is Pausable, ReentrancyGuard {
         return _computeReward(accountStakes[msg.sender]);
     }
 
-    // PUBLIC SETUP
-    function setupStakingLimit(uint256 maxAmount, uint256 initialAmount, uint256 daysInterval, uint256 unstakingPeriod)
+    function toggleRewards(bool enabled)
+    onlyOwner
+    onlyAfterSetup
     external
+    {
+        currentStatus = enabled ? Status.Running : Status.RewardsDisabled;
+    }
+
+    // OWNER SETUP
+    function setupStakingLimit(uint256 maxAmount, uint256 initialAmount, uint256 daysInterval, uint256 unstakingPeriod)
     onlyOwner
     whenPaused
+    onlyDuringSetup
+    external
     {
-        require(currentStatus == Status.StakingLimitSetup, '[Lifecycle] Staking limits are already set');
+        require(!setupState.staking, '[Lifecycle] Staking limits are already set');
         require(maxAmount.mod(initialAmount) == 0, '[Validation] maxAmount should be a multiple of initialAmount');
 
         uint256 maxIntervals = maxAmount.div(initialAmount);
@@ -199,7 +231,8 @@ contract StakingContract is Pausable, ReentrancyGuard {
         stakingLimitConfig.unstakingPeriod = stakingLimitConfig.unstakingPeriod.add(unstakingPeriod) * 1 days;
         stakingLimitConfig.maxIntervals = maxIntervals;
 
-        currentStatus = Status.RewardsSetup;
+        setupState.staking = true;
+        _checkSetupComplete();
     }
 
     function setupRewards(
@@ -208,11 +241,12 @@ contract StakingContract is Pausable, ReentrancyGuard {
         uint256[] calldata lowerBounds,
         uint256[] calldata upperBounds
     )
-    external
     onlyOwner
     whenPaused
+    onlyDuringSetup
+    external
     {
-        require(currentStatus == Status.RewardsSetup, '[Lifecycle] Rewards are already set');
+        require(!setupState.rewards, '[Lifecycle] Rewards are already set');
         _validateSetupRewardsParameters(multiplier, anualRewardRates, lowerBounds, upperBounds);
 
         // Setup rewards
@@ -222,29 +256,26 @@ contract StakingContract is Pausable, ReentrancyGuard {
             _addBaseReward(anualRewardRates[i], lowerBounds[i], upperBounds[i]);
         }
 
-        currentStatus = Status.Running;
-    }
-
-    function toggleRewards(bool enabled)
-    external
-    onlyOwner
-    {
-        require(
-            currentStatus == Status.Running || currentStatus == Status.RewardsDisabled,
-            "[Lifecycle] Contract does not have the setup complete"
-        );
-
-        currentStatus = enabled ? Status.Running : Status.RewardsDisabled;
+        setupState.rewards = true;
+        _checkSetupComplete();
     }
 
     // INTERNAL
+    function _checkSetupComplete()
+    private
+    {
+        if(!setupState.rewards || !setupState.staking) {
+            return;
+        }
+
+        currentStatus = Status.Running;
+    }
+
     function _computeCurrentStakingLimit()
     private
     view
     returns (uint256)
     {
-        require(currentStatus == Status.Running, '[Lifecycle] Setup not complete');
-
         uint256 intervalsPassed = _getIntervalsPassed();
 
         // initialLimit * ((now - launchMoment) / interval)
