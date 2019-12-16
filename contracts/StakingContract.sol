@@ -68,11 +68,11 @@ contract StakingContract is Pausable, ReentrancyGuard {
     IERC20 public token;
     Status public currentStatus;
 
-    SetupState private setupState;
-    StakingLimitConfig private stakingLimitConfig;
+    SetupState public setupState;
+    StakingLimitConfig public stakingLimitConfig;
     RewardConfig public rewardConfig;
 
-    address private rewardsAddress;
+    address public rewardsAddress;
     uint256 public launchTimestamp;
     uint256 public currentTotalStake;
 
@@ -132,6 +132,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
     guardMaxStakingLimit(amount)
     public
     {
+        require(amount > 0, "[Validation] The stake deposit has to be larger than 0");
         require(!accountStakes[msg.sender].exists, "[Deposit] You already have a stake");
 
         StakeDeposit storage stakeDeposit = accountStakes[msg.sender];
@@ -172,7 +173,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
         StakeDeposit storage stakeDeposit = accountStakes[msg.sender];
 
         // validate enough days have passed from initiating the withdrawal
-        uint256 daysPassed = stakeDeposit.endDate.sub(stakeDeposit.startDate) * 1 days;
+        uint256 daysPassed = (stakeDeposit.endDate - stakeDeposit.startDate) * 1 days;
         require(daysPassed >= stakingLimitConfig.unstakingPeriod, '[Withdraw] The unstaking period did not pass');
 
         uint256 reward = _computeReward(stakeDeposit);
@@ -209,6 +210,26 @@ contract StakingContract is Pausable, ReentrancyGuard {
         return _computeReward(accountStakes[msg.sender]);
     }
 
+    function baseRewardsLength()
+    onlyAfterSetup
+    external
+    view
+    returns (uint256)
+    {
+        return rewardConfig.baseRewards.length;
+    }
+
+    function baseReward(uint256 index)
+    onlyAfterSetup
+    external
+    view
+    returns (uint256, uint256, uint256)
+    {
+        BaseReward memory br = rewardConfig.baseRewards[index];
+
+        return (br.anualRewardRate, br.lowerBound, br.upperBound);
+    }
+
     function toggleRewards(bool enabled)
     onlyOwner
     onlyAfterSetup
@@ -218,6 +239,25 @@ contract StakingContract is Pausable, ReentrancyGuard {
         // TODO: Update the baseRewardHistory with the 0 BaseReward
     }
 
+    function baseRewardHistoryLength()
+    external
+    view
+    returns (uint256)
+    {
+        return baseRewardHistory.length;
+    }
+
+    function baseRewardCheckpoint(uint256 index)
+    onlyAfterSetup
+    external
+    view
+    returns (uint256, uint256, uint256, uint256)
+    {
+        BaseRewardCheckpoint memory c = baseRewardHistory[index];
+
+        return (c.baseRewardIndex, c.startTimestamp, c.endTimestamp, c.fromBlock);
+    }
+
     // OWNER SETUP
     function setupStakingLimit(uint256 maxAmount, uint256 initialAmount, uint256 daysInterval, uint256 unstakingPeriod)
     onlyOwner
@@ -225,14 +265,15 @@ contract StakingContract is Pausable, ReentrancyGuard {
     onlyDuringSetup
     external
     {
+        require(maxAmount > 0 && initialAmount > 0 && daysInterval > 0 && unstakingPeriod >= 0, '[Validation] Some parameters are 0');
         require(maxAmount.mod(initialAmount) == 0, '[Validation] maxAmount should be a multiple of initialAmount');
 
         uint256 maxIntervals = maxAmount.div(initialAmount);
         // set the staking limits
-        stakingLimitConfig.maxAmount = stakingLimitConfig.maxAmount.add(maxAmount);
-        stakingLimitConfig.initialAmount = stakingLimitConfig.initialAmount.add(initialAmount);
-        stakingLimitConfig.daysInterval = stakingLimitConfig.daysInterval.add(daysInterval) * 1 days;
-        stakingLimitConfig.unstakingPeriod = stakingLimitConfig.unstakingPeriod.add(unstakingPeriod) * 1 days;
+        stakingLimitConfig.maxAmount = maxAmount;
+        stakingLimitConfig.initialAmount = initialAmount;
+        stakingLimitConfig.daysInterval = daysInterval;
+        stakingLimitConfig.unstakingPeriod = unstakingPeriod;
         stakingLimitConfig.maxIntervals = maxIntervals;
 
         setupState.staking = true;
@@ -308,9 +349,9 @@ contract StakingContract is Pausable, ReentrancyGuard {
         uint256 stakingPeriod = (stakeDeposit.endDate - stakeDeposit.startDate) * 1 days;
         uint256 weightedAverageBaseReward = _computeWeightedAverageBaseReward(stakeDeposit, stakingPeriod);
         uint256 multiplier = stakingPeriod.mul(rewardConfig.multiplier).div(100);
-        uint256 baseReward = weightedAverageBaseReward.add(multiplier);
+        uint256 rewardRate = weightedAverageBaseReward.add(multiplier);
 
-        return stakeDeposit.amount.mul(baseReward).div(100);
+        return stakeDeposit.amount.mul(rewardRate).div(100);
     }
 
     function _computeWeightedAverageBaseReward(StakeDeposit memory stakeDeposit, uint256 stakingPeriod)
@@ -360,10 +401,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
     {
         require(baseRewardHistory.length == 0, '[Logical] Base reward history has already been initialized');
 
-        BaseRewardCheckpoint storage newCheckpoint = baseRewardHistory[0];
-        newCheckpoint.baseRewardIndex = 0;
-        newCheckpoint.startTimestamp = now;
-        newCheckpoint.fromBlock = block.number;
+        baseRewardHistory.push(BaseRewardCheckpoint(0, now, 0, block.number));
     }
 
     function _updateBaseRewardHistory()

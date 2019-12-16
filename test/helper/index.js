@@ -6,6 +6,6 @@ const {uniqueId} = require('./functions/uniqueId');
 module.exports = {
     getEventProperty,
     expectInvalidArgument,
-    numbers,
+    BigNumber: numbers.BigNumber,
     uniqueId
 };

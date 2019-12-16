@@ -31,6 +31,7 @@ const expectInvalidArgument = async function (promise, argName, coderType) {
 };
 
 expectInvalidArgument.string = async (promise, argumentName) => expectInvalidArgument(promise, argumentName, 'string');
+expectInvalidArgument.array = async (promise, argumentName) => expectInvalidArgument(promise, argumentName, 'array');
 expectInvalidArgument.uint256 = async (promise, argumentName) => expectInvalidArgument(promise, argumentName, 'uint256');
 expectInvalidArgument.address = async (promise, argumentName) => expectInvalidArgument(promise, argumentName, 'address');
 

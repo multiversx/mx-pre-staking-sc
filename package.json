@@ -18,6 +18,7 @@
   },
   "devDependencies": {
     "@openzeppelin/test-helpers": "^0.5.4",
-    "chai": "^4.2.0"
+    "chai": "^4.2.0",
+    "lodash": "^4.17.15"
   }
 }
