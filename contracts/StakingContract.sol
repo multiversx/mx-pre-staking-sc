@@ -117,6 +117,8 @@ contract StakingContract is Pausable, ReentrancyGuard {
     onlyContract(_token)
     public
     {
+        require(_rewardsAddress != address(0), "[Validation] _rewardsAddress is the zero address");
+
         token = IERC20(_token);
         rewardsAddress = _rewardsAddress;
         launchTimestamp = now;
@@ -202,6 +204,8 @@ contract StakingContract is Pausable, ReentrancyGuard {
     view
     returns (uint256)
     {
+        require(accountStakes[msg.sender].exists, "[Validation] This account doesn't have a stake deposit");
+
         return _computeReward(accountStakes[msg.sender]);
     }
 
@@ -211,6 +215,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
     external
     {
         currentStatus = enabled ? Status.Running : Status.RewardsDisabled;
+        // TODO: Update the baseRewardHistory with the 0 BaseReward
     }
 
     // OWNER SETUP
@@ -220,7 +225,6 @@ contract StakingContract is Pausable, ReentrancyGuard {
     onlyDuringSetup
     external
     {
-        require(!setupState.staking, '[Lifecycle] Staking limits are already set');
         require(maxAmount.mod(initialAmount) == 0, '[Validation] maxAmount should be a multiple of initialAmount');
 
         uint256 maxIntervals = maxAmount.div(initialAmount);
@@ -246,7 +250,6 @@ contract StakingContract is Pausable, ReentrancyGuard {
     onlyDuringSetup
     external
     {
-        require(!setupState.rewards, '[Lifecycle] Rewards are already set');
         _validateSetupRewardsParameters(multiplier, anualRewardRates, lowerBounds, upperBounds);
 
         // Setup rewards
@@ -256,7 +259,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
             _addBaseReward(anualRewardRates[i], lowerBounds[i], upperBounds[i]);
         }
 
-        // TODO: initiate baseRewardHistory with the first one
+        // initiate baseRewardHistory with the first one which should start from 0
         _initBaseRewardHistory();
 
         setupState.rewards = true;
@@ -437,12 +440,12 @@ contract StakingContract is Pausable, ReentrancyGuard {
     pure
     {
         require(anualRewardRates.length > 0 && lowerBounds.length > 0 && upperBounds.length > 0,
-            '[Validation] All parameters'
+            '[Validation] All parameters must have at least one element'
         );
         require(anualRewardRates.length == lowerBounds.length && lowerBounds.length == upperBounds.length,
             '[Validation] All parameters must have the same number of elements'
         );
-        require(lowerBounds[0] == 0, "[Validation] First lower bound should be 0");
+        require(lowerBounds[0] == 0, '[Validation] First lower bound should be 0');
         require((multiplier < 100) && (uint256(100).mod(multiplier) == 0),
             '[Validation] Multiplier should be smaller than 100 and divide it equally'
         );
