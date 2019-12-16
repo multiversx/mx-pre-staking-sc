@@ -3,10 +3,10 @@ pragma solidity ^0.5.14;
 import "./libs/math/SafeMath.sol";
 import "./libs/math/Math.sol";
 import "./libs/utils/Address.sol";
+import "./libs/utils/Arrays.sol";
 import "./libs/utils/ReentrancyGuard.sol";
 import "./libs/lifecycle/Pausable.sol";
 import "./token/ERC20/IERC20.sol";
-import "./libs/utils/Arrays.sol";
 
 contract StakingContract is Pausable, ReentrancyGuard {
 
@@ -256,6 +256,9 @@ contract StakingContract is Pausable, ReentrancyGuard {
             _addBaseReward(anualRewardRates[i], lowerBounds[i], upperBounds[i]);
         }
 
+        // TODO: initiate baseRewardHistory with the first one
+        _initBaseRewardHistory();
+
         setupState.rewards = true;
         _checkSetupComplete();
     }
@@ -264,7 +267,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
     function _checkSetupComplete()
     private
     {
-        if(!setupState.rewards || !setupState.staking) {
+        if (!setupState.rewards || !setupState.staking) {
             return;
         }
 
@@ -349,6 +352,17 @@ contract StakingContract is Pausable, ReentrancyGuard {
         rewardConfig.upperBounds.push(upperBound);
     }
 
+    function _initBaseRewardHistory()
+    private
+    {
+        require(baseRewardHistory.length == 0, '[Logical] Base reward history has already been initialized');
+
+        BaseRewardCheckpoint storage newCheckpoint = baseRewardHistory[0];
+        newCheckpoint.baseRewardIndex = 0;
+        newCheckpoint.startTimestamp = now;
+        newCheckpoint.fromBlock = block.number;
+    }
+
     function _updateBaseRewardHistory()
     private
     {
@@ -358,6 +372,8 @@ contract StakingContract is Pausable, ReentrancyGuard {
         if (currentBaseReward.lowerBound <= currentTotalStake && currentTotalStake <= currentBaseReward.upperBound) {
             return;
         }
+
+        // TODO: Insert mechanism for 0 reward periods based on Status.RewardsDisabled and a BaseReward of anual rate 0
 
         BaseRewardCheckpoint storage oldCheckPoint = _lastBaseRewardCheckpoint();
         (uint256 index,) = _computeCurrentBaseReward();
@@ -426,6 +442,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
         require(anualRewardRates.length == lowerBounds.length && lowerBounds.length == upperBounds.length,
             '[Validation] All parameters must have the same number of elements'
         );
+        require(lowerBounds[0] == 0, "[Validation] First lower bound should be 0");
         require((multiplier < 100) && (uint256(100).mod(multiplier) == 0),
             '[Validation] Multiplier should be smaller than 100 and divide it equally'
         );
