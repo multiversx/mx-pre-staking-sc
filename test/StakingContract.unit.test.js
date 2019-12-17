@@ -1,11 +1,9 @@
 // LIBRARIES
-const chai = require('chai');
-const expect = chai.expect;
-const should = chai.should();
+const {expect} = require('chai');
 const _ = require('lodash');
 
-const {expectEvent, expectRevert, constants, time} = require('@openzeppelin/test-helpers');
-const {BigNumber, getEventProperty, expectInvalidArgument} = require('./helper');
+const {expectEvent, expectRevert, constants, time, balance} = require('@openzeppelin/test-helpers');
+const {BigNumber, expectInvalidArgument, timeTravel} = require('./helper');
 
 // CONTRACTS
 const StakingContract = artifacts.require('StakingContract');
@@ -65,7 +63,14 @@ const transformRewardToString = element => {
 };
 const from = (account) => ({from: account});
 
-contract('StakingContract | Unit Tests', function ([owner, rewardsAddress, unauthorized, account1, account2]) {
+contract('StakingContract', function ([owner, rewardsAddress, unauthorized, account1, account2, account3]) {
+    const newContract = async function () {
+        this.token = await Token.new('ElrondToken', 'ERD', BigNumber(18));
+        this.stakingContract = await StakingContract.new(this.token.address, rewardsAddress);
+        await this.token.mint(rewardsAddress, rewardsAmount);
+        await this.token.mint(account1, depositAmount);
+        await this.token.approve(this.stakingContract.address, depositAmount, from(account1));
+    };
 
     describe('1. Before deployment', async function () {
         before(async function () {
@@ -357,13 +362,7 @@ contract('StakingContract | Unit Tests', function ([owner, rewardsAddress, unaut
     });
 
     describe('4. Deposit and withdraw', async function () {
-        before(async function () {
-            this.token = await Token.new('ElrondToken', 'ERD', BigNumber(18));
-            this.stakingContract = await StakingContract.new(this.token.address, rewardsAddress);
-            await this.token.mint(rewardsAddress, rewardsAmount);
-            await this.token.mint(account1, depositAmount);
-            await this.token.approve(this.stakingContract.address, depositAmount, from(account1));
-        });
+        before(newContract);
 
         it('4.1. deposit: should revert when contract is not setup', async function () {
             const revertMessage = '[Lifecycle] Setup is not done';
@@ -415,84 +414,140 @@ contract('StakingContract | Unit Tests', function ([owner, rewardsAddress, unaut
                 amount: depositAmount
             };
 
+            const initialBalance = await this.token.balanceOf(this.stakingContract.address);
             await this.token.approve(this.stakingContract.address, depositAmount, from(account2));
             const {logs} = await this.stakingContract.deposit(depositAmount, from(account2));
+            const currentBalance = await this.token.balanceOf(this.stakingContract.address);
 
             expectEvent.inLogs(logs, 'StakeDeposited', eventData);
+            expect(initialBalance.add(depositAmount)).to.be.bignumber.equal(currentBalance);
+        });
+
+        it('4.8. deposit: should have current total stake less than current maximum staking limit', async function () {
+            const totalStake = await this.stakingContract.currentTotalStake();
+            const currentMaxLimit = await this.stakingContract.currentStakingLimit();
+
+            expect(totalStake).to.be.bignumber.below(currentMaxLimit);
+            expect(currentMaxLimit).to.be.bignumber.equal(stakingConfig.initialAmount);
+        });
+
+        it('4.9. deposit: should revert if trying to deposit more than the first wave limit (5 * 10^8)', async function () {
+            const revertMessage = "[Deposit] Your deposit would exceed the current staking limit";
+            await this.token.mint(account3, stakingConfig.initialAmount);
+
+            await expectRevert(this.stakingContract.deposit(stakingConfig.initialAmount, from(account3)), revertMessage);
+        });
+
+        it('4.10. initiateWithdrawal: should revert when contract is paused', async function () {
+            await this.stakingContract.pause();
+            await expectRevert(this.stakingContract.initiateWithdrawal(from(account1)), "Pausable: paused");
+            await this.stakingContract.unpause();
+        });
+
+        it('4.12. initiateWithdrawal: should revert if minimum staking period did not pass', async function () {
+            const revertMessage = "[Withdraw] Not enough days passed";
+            // 0 Days passed
+            await expectRevert(this.stakingContract.initiateWithdrawal(from(account1)), revertMessage);
+            const instervals1 = await this.stakingContract._getIntervalsPassed();
+            console.log('instervals1: ',instervals1.toString());
+
+            // 26 Days passed
+            await time.increase(time.duration.days(26));
+            // await expectRevert(this.stakingContract.initiateWithdrawal(from(account1)), revertMessage);
+            const instervals2 = await this.stakingContract._getIntervalsPassed();
+            console.log('instervals2: ',instervals2.toString());
+        });
+
+        it('4.13. initiateWithdrawal: should revert if the account has no stake deposit', async function () {
+            // 30 Days passed
+            await time.increase(time.duration.days(4));
+            const revertMessage = "[Initiate Withdrawal] There is no stake deposit for this account";
+            await expectRevert(this.stakingContract.initiateWithdrawal(from(unauthorized)), revertMessage)
+        });
+
+        it('4.14. initiateWithdrawal: should revert if account has already initiated the withdrawal', async function () {
+            const revertMessage = "[Initiate Withdrawal] You already initiated the withdrawal";
+
+            await this.stakingContract.initiateWithdrawal(from(account1));
+            await expectRevert(this.stakingContract.initiateWithdrawal(from(account1)), revertMessage)
+        });
+
+        it('4.15. initiateWithdrawal: should emit the WithdrawInitiated(msg.sender, stakeDeposit.amount) event', async function () {
 
         });
 
-        it('4.8. deposit: should transfer the tokens from the depositing account to the contract', async function () {
+        it('4.16. initiateWithdrawal: should modify the stake deposit to include the endDate and current base reward history checkpoint', async function () {
 
         });
 
-        it('4.9. deposit: should revert if current max staking limit has been reached', async function () {
-
-        });
-    });
-
-    describe('Function: initiateWithdrawal', async function () {
-        it('should revert when contract is paused', async function () {
+        it('4.17. executeWithdrawal: should revert when contract is paused', async function () {
 
         });
 
-        it('should revert when contract is not setup', async function () {
+        it('4.18. executeWithdrawal: should revert when contract is not setup', async function () {
 
         });
 
-        it('should revert if minimum staking period did not pass', async function () {
-
-        });
-
-        it('should revert if the account has no stake deposit', async function () {
-
-        });
-
-        it('should should revert if account has already initiated the withdrawal', async function () {
-
-        });
-
-        it('should emit the WithdrawInitiated(msg.sender, stakeDeposit.amount) event', async function () {
-
-        });
-
-        it('should modify the stake deposit to include the endDate and current base reward history checkpoint', async function () {
-
-        });
-    });
-
-    describe('Function: executeWithdrawal', async function () {
-        it('should revert when contract is paused', async function () {
-
-        });
-
-        it('should revert when contract is not setup', async function () {
-
-        });
-
-        it('should revert if unstaking period did not pass', async function () {
+        it('4.19. executeWithdrawal: should revert if unstaking period did not pass', async function () {
             const revertMessage = '[Withdraw] The unstaking period did not pass';
         });
 
-        it('should revert if transfer fails on initial deposit amount', async function () {
+        it('4.20. executeWithdrawal: should revert if transfer fails on initial deposit amount', async function () {
             const message = "[Withdraw] Something went wrong while transferring your initial deposit";
         });
 
-        it('should revert if transfer fails on reward', async function () {
+        it('4.21. executeWithdrawal: should revert if transfer fails on reward', async function () {
             const message = "[Withdraw] Something went wrong while transferring your reward";
         });
 
-        it('should transfer the initial staking deposit and the correct reward and emit WithdrawExecuted(msg.sender, amount, reward)', async function () {
+        it('4.22. executeWithdrawal: should transfer the initial staking deposit and the correct reward and emit WithdrawExecuted(msg.sender, amount, reward)', async function () {
 
         });
 
-        it('should update the current total stake', async function () {
+        it('4.23. executeWithdrawal: should update the current total stake', async function () {
 
         });
 
-        it('should update the base reward history according to the new currentTotalStake', async function () {
+        it('4.24. executeWithdrawal: should update the base reward history according to the new currentTotalStake', async function () {
 
         });
+    });
+
+    describe('5. Staking limit waves', async function () {
+        before(async function () {
+            this.token = await Token.new('ElrondToken', 'ERD', BigNumber(18));
+            this.stakingContract = await StakingContract.new(this.token.address, rewardsAddress);
+            await this.token.mint(rewardsAddress, rewardsAmount);
+            await this.token.mint(account1, depositAmount);
+            await this.token.mint(account2, depositAmount);
+            await this.token.mint(account3, depositAmount);
+
+            await this.token.approve(this.stakingContract.address, depositAmount, from(account1));
+            await this.token.approve(this.stakingContract.address, depositAmount, from(account2));
+            await this.token.approve(this.stakingContract.address, depositAmount, from(account3));
+
+            await this.stakingContract.setupStakingLimit(
+                stakingConfig.maxAmount, stakingConfig.initialAmount, stakingConfig.daysInterval, stakingConfig.unstakingPeriod
+            );
+            await this.stakingContract.setupRewards(
+                rewardsConfig.multiplier,
+                anualRewardRates,
+                lowerBounds,
+                upperBounds
+            );
+        });
+
+        it('5.3. should not advance the wave earlier', async function () {
+
+        });
+
+        it('5.2. should advance the staking limit to the second wave (1 Billion', async function () {
+
+        });
+    });
+
+    describe('6. Base reward changes', async function () {
+
     });
 
     describe('Function: getCurrentStakingLimit', async function () {

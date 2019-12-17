@@ -348,7 +348,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
     view
     returns (uint256)
     {
-        return ((now - launchTimestamp) * 1 days ) / (stakingLimitConfig.daysInterval * 1 days);
+        return ((now - launchTimestamp) / stakingLimitConfig.daysInterval) / 1 days;
     }
 
     function _computeReward(StakeDeposit storage stakeDeposit)
