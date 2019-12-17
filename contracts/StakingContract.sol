@@ -362,10 +362,12 @@ contract StakingContract is Pausable, ReentrancyGuard {
             return 0;
         }
 
-        uint256 stakingPeriod = (stakeDeposit.endDate - stakeDeposit.startDate) / 1 days;
-        uint256 weightedAverage = _computeWeightedAverageBaseReward(stakeDeposit);
+        uint256 scale = 10**18;
+        uint256 denominator = scale.mul(36500);
+        uint256 weightedAverage = (_computeWeightedAverageBaseReward(stakeDeposit)).mul(scale);
+        uint256 accumulator = weightedAverage.div(100);
 
-        return stakeDeposit.amount.mul(weightedAverage).div(36500);
+        return stakeDeposit.amount.mul(weightedAverage.add(accumulator)) / denominator;
     }
 
     function _computeWeightedAverageBaseReward(StakeDeposit memory stakeDeposit)

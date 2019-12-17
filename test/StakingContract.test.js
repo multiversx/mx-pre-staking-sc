@@ -505,8 +505,6 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
 
             await time.increase(time.duration.days(stakingConfig.unstakingPeriod.add(BigNumber(1))));
 
-            const stakeDeposit = await this.stakingContract.getStakeDeposit(from(account1));
-
             await this.token.decreaseAllowance(
                 this.stakingContract.address,
                 rewardsAmount.sub(BigNumber(123)),
