@@ -76,14 +76,15 @@ contract StakingContract is Pausable, ReentrancyGuard {
     uint256 public launchTimestamp;
     uint256 public currentTotalStake;
 
-    mapping(address => StakeDeposit) public accountStakes;
+    mapping(address => StakeDeposit) private _stakeDeposits;
     BaseRewardCheckpoint[] private baseRewardHistory;
 
     // MODIFIERS
     modifier guardMaxStakingLimit(uint256 amount)
     {
         uint256 resultedStakedAmount = currentTotalStake.add(amount);
-        require(resultedStakedAmount <= _computeCurrentStakingLimit(), "[Deposit] Your deposit would exceed the current staking limit");
+        uint256 currentStakingLimit = _computeCurrentStakingLimit();
+        require(resultedStakedAmount <= currentStakingLimit, "[Deposit] Your deposit would exceed the current staking limit");
         _;
     }
 
@@ -127,15 +128,15 @@ contract StakingContract is Pausable, ReentrancyGuard {
 
     function deposit(uint256 amount)
     nonReentrant
-    whenNotPaused
     onlyAfterSetup
+    whenNotPaused
     guardMaxStakingLimit(amount)
     public
     {
         require(amount > 0, "[Validation] The stake deposit has to be larger than 0");
-        require(!accountStakes[msg.sender].exists, "[Deposit] You already have a stake");
+        require(!_stakeDeposits[msg.sender].exists, "[Deposit] You already have a stake");
 
-        StakeDeposit storage stakeDeposit = accountStakes[msg.sender];
+        StakeDeposit storage stakeDeposit = _stakeDeposits[msg.sender];
         stakeDeposit.amount = stakeDeposit.amount.add(amount);
         stakeDeposit.startDate = now;
         stakeDeposit.startCheckpointIndex = baseRewardHistory.length - 1;
@@ -155,7 +156,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
     guardForPrematureWithdrawal
     external
     {
-        StakeDeposit storage stakeDeposit = accountStakes[msg.sender];
+        StakeDeposit storage stakeDeposit = _stakeDeposits[msg.sender];
         require(stakeDeposit.exists, "[Initiate Withdrawal] There is no stake deposit for this account");
         require(stakeDeposit.endDate != 0, "[Initiate Withdrawal] You already initiated the withdrawal");
 
@@ -170,7 +171,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
     onlyAfterSetup
     external
     {
-        StakeDeposit storage stakeDeposit = accountStakes[msg.sender];
+        StakeDeposit storage stakeDeposit = _stakeDeposits[msg.sender];
 
         // validate enough days have passed from initiating the withdrawal
         uint256 daysPassed = (stakeDeposit.endDate - stakeDeposit.startDate) * 1 days;
@@ -190,7 +191,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
         emit WithdrawExecuted(msg.sender, amount, reward);
     }
 
-    function getCurrentStakingLimit()
+    function currentStakingLimit()
     onlyAfterSetup
     public
     view
@@ -199,15 +200,27 @@ contract StakingContract is Pausable, ReentrancyGuard {
         return _computeCurrentStakingLimit();
     }
 
-    function getCurrentReward()
+    function currentReward()
     onlyAfterSetup
     external
     view
     returns (uint256)
     {
-        require(accountStakes[msg.sender].exists, "[Validation] This account doesn't have a stake deposit");
+        require(_stakeDeposits[msg.sender].exists, "[Validation] This account doesn't have a stake deposit");
 
-        return _computeReward(accountStakes[msg.sender]);
+        return _computeReward(_stakeDeposits[msg.sender]);
+    }
+
+    function stakeDeposit()
+    onlyAfterSetup
+    external
+    view
+    returns (uint256, uint256, uint256, uint256, uint256)
+    {
+        require(_stakeDeposits[msg.sender].exists, "[Validation] This account doesn't have a stake deposit");
+        StakeDeposit memory s = _stakeDeposits[msg.sender];
+
+        return (s.amount, s.startDate, s.endDate, s.startCheckpointIndex, s.endCheckpointIndex);
     }
 
     function baseRewardsLength()
@@ -257,6 +270,8 @@ contract StakingContract is Pausable, ReentrancyGuard {
 
         return (c.baseRewardIndex, c.startTimestamp, c.endTimestamp, c.fromBlock);
     }
+
+
 
     // OWNER SETUP
     function setupStakingLimit(uint256 maxAmount, uint256 initialAmount, uint256 daysInterval, uint256 unstakingPeriod)
@@ -337,7 +352,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
         return ((now - launchTimestamp) * 1 days) / stakingLimitConfig.daysInterval;
     }
 
-    function _computeReward(StakeDeposit storage stakeDeposit)
+    function _computeReward(StakeDeposit storage deposit)
     private
     view
     returns (uint256)
@@ -346,12 +361,12 @@ contract StakingContract is Pausable, ReentrancyGuard {
             return 0;
         }
 
-        uint256 stakingPeriod = (stakeDeposit.endDate - stakeDeposit.startDate) * 1 days;
-        uint256 weightedAverageBaseReward = _computeWeightedAverageBaseReward(stakeDeposit, stakingPeriod);
+        uint256 stakingPeriod = (deposit.endDate - deposit.startDate) * 1 days;
+        uint256 weightedAverageBaseReward = _computeWeightedAverageBaseReward(deposit, stakingPeriod);
         uint256 multiplier = stakingPeriod.mul(rewardConfig.multiplier).div(100);
         uint256 rewardRate = weightedAverageBaseReward.add(multiplier);
 
-        return stakeDeposit.amount.mul(rewardRate).div(100);
+        return deposit.amount.mul(rewardRate).div(100);
     }
 
     function _computeWeightedAverageBaseReward(StakeDeposit memory stakeDeposit, uint256 stakingPeriod)
