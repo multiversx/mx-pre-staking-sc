@@ -359,6 +359,7 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
             this.stakingContract = await StakingContract.new(this.token.address, rewardsAddress);
             await this.token.mint(rewardsAddress, rewardsAmount);
             await this.token.mint(account1, depositAmount);
+            await this.token.approve(this.stakingContract.address, rewardsAmount, from(rewardsAddress));
             await this.token.approve(this.stakingContract.address, depositAmount, from(account1));
         });
 
@@ -472,25 +473,39 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
             expectEvent.inLogs(logs, 'WithdrawInitiated', eventData);
         });
 
-        it('4.16. initiateWithdrawal: should revert if account has already initiated the withdrawal', async function () {
+        it('4.15. initiateWithdrawal: should revert if account has already initiated the withdrawal', async function () {
             const revertMessage = "[Initiate Withdrawal] You already initiated the withdrawal";
             await expectRevert(this.stakingContract.initiateWithdrawal(from(account1)), revertMessage)
         });
 
-        it('4.17. executeWithdrawal: should revert when contract is paused', async function () {
+        it('4.16. executeWithdrawal: should revert when contract is paused', async function () {
             const revertMessage = "Pausable: paused";
             await this.stakingContract.pause();
             await expectRevert(this.stakingContract.executeWithdrawal(from(account1)), revertMessage);
             await this.stakingContract.unpause();
         });
 
-        it('4.18. executeWithdrawal: should revert if unstaking period did not pass', async function () {
+        it('4.17. executeWithdrawal: should revert if there is no deposit on the account', async function () {
+            const revertMessage = "[Withdraw] There is no stake deposit for this account";
+            await expectRevert(this.stakingContract.executeWithdrawal(), revertMessage);
+        });
+
+        it('4.18. executeWithdrawal: should revert if the withdraw was not initialized', async function () {
+            const revertMessage = "[Withdraw] Withdraw is not initialized";
+            await expectRevert(this.stakingContract.executeWithdrawal(from(account2)), revertMessage);
+        });
+
+        it('4.19. executeWithdrawal: should revert if unstaking period did not pass', async function () {
             const revertMessage = '[Withdraw] The unstaking period did not pass';
             await expectRevert(this.stakingContract.executeWithdrawal(from(account1)), revertMessage);
         });
 
         it('4.20. executeWithdrawal: should revert if transfer fails on reward', async function () {
             const revertMessage = "ERC20: transfer amount exceeds allowance";
+
+            await time.increase(time.duration.days(stakingConfig.unstakingPeriod.add(BigNumber(1))));
+
+            const stakeDeposit = await this.stakingContract.getStakeDeposit(from(account1));
 
             await this.token.decreaseAllowance(
                 this.stakingContract.address,

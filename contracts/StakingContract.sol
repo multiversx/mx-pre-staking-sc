@@ -362,7 +362,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
             return 0;
         }
 
-        uint256 stakingPeriod = (stakeDeposit.endDate - stakeDeposit.startDate) * 1 days;
+        uint256 stakingPeriod = (stakeDeposit.endDate - stakeDeposit.startDate) / 1 days;
         uint256 weightedAverageBaseReward = _computeWeightedAverageBaseReward(stakeDeposit, stakingPeriod);
         uint256 multiplier = stakingPeriod.mul(rewardConfig.multiplier).div(100);
         uint256 rewardRate = weightedAverageBaseReward.add(multiplier);
@@ -375,21 +375,31 @@ contract StakingContract is Pausable, ReentrancyGuard {
     view
     returns (uint256)
     {
+        uint256 segmentStakingPeriod;
+        uint256 dailyRewardRate;
+        uint256 segmentBaseReward;
+        uint256 baseRewardSum;
+
+        // The contract never left the first checkpoint
+        if (stakeDeposit.startCheckpointIndex == stakeDeposit.endCheckpointIndex) {
+            segmentStakingPeriod = (stakeDeposit.endDate - stakeDeposit.startDate) / 1 days;
+            dailyRewardRate = _baseRewardFromHistoryIndex(stakeDeposit.startCheckpointIndex).anualRewardRate.decDiv18(365);
+            baseRewardSum = segmentStakingPeriod.decMul18(dailyRewardRate);
+
+            return baseRewardSum.decDiv18(stakingPeriod);
+        }
+
         // Computing the first segment base reward
         // User could deposit in the middle of the segment so we need to get the segment from which the user deposited
         // to the moment the base reward changes
-        uint256 segmentStakingPeriod = (baseRewardHistory[stakeDeposit.startCheckpointIndex].endTimestamp - stakeDeposit.startDate) * 1 days;
-        uint256 dailyRewardRate = _baseRewardFromHistoryIndex(stakeDeposit.startCheckpointIndex).anualRewardRate.div(365);
-        uint256 segmentBaseReward = segmentStakingPeriod.mul(dailyRewardRate);
-        uint256 baseRewardSum = segmentBaseReward;
-
-        if (stakeDeposit.startCheckpointIndex == stakeDeposit.endCheckpointIndex) {
-            return baseRewardSum.div(stakingPeriod);
-        }
+        segmentStakingPeriod = (baseRewardHistory[stakeDeposit.startCheckpointIndex].endTimestamp - stakeDeposit.startDate) / 1 days;
+        dailyRewardRate = _baseRewardFromHistoryIndex(stakeDeposit.startCheckpointIndex).anualRewardRate.div(365);
+        segmentBaseReward = segmentStakingPeriod.mul(dailyRewardRate);
+        baseRewardSum = segmentBaseReward;
 
         // Starting from the second checkpoint because the first one is already computed
         for (uint256 i = stakeDeposit.startCheckpointIndex + 1; i < stakeDeposit.endCheckpointIndex; i++) {
-            segmentStakingPeriod = (baseRewardHistory[i].endTimestamp - baseRewardHistory[i].startTimestamp) * 1 days;
+            segmentStakingPeriod = (baseRewardHistory[i].endTimestamp - baseRewardHistory[i].startTimestamp) / 1 days;
             dailyRewardRate = _baseRewardFromHistoryIndex(i).anualRewardRate.div(365);
             segmentBaseReward = dailyRewardRate.mul(segmentStakingPeriod);
             baseRewardSum = baseRewardSum.add(segmentBaseReward);
@@ -397,7 +407,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
 
         // Computing the base reward for the last segment
         // days between start timestamp of the last checkpoint to the moment he initialized the withdrawal
-        segmentStakingPeriod = (stakeDeposit.endDate - baseRewardHistory[stakeDeposit.endCheckpointIndex].startTimestamp) * 1 days;
+        segmentStakingPeriod = (stakeDeposit.endDate - baseRewardHistory[stakeDeposit.endCheckpointIndex].startTimestamp) / 1 days;
         dailyRewardRate = _baseRewardFromHistoryIndex(stakeDeposit.endCheckpointIndex).anualRewardRate.div(365);
         segmentBaseReward = segmentStakingPeriod.mul(dailyRewardRate);
         baseRewardSum = baseRewardSum.add(segmentBaseReward);

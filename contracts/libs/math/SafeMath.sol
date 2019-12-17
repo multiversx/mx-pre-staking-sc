@@ -14,6 +14,8 @@ pragma solidity ^0.5.14;
  * class of bugs, so it's recommended to use it always.
  */
 library SafeMath {
+    uint constant TEN18 = 10**18;
+
     /**
      * @dev Returns the addition of two unsigned integers, reverting on
      * overflow.
@@ -152,5 +154,18 @@ library SafeMath {
     function mod(uint256 a, uint256 b, string memory errorMessage) internal pure returns (uint256) {
         require(b != 0, errorMessage);
         return a % b;
+    }
+
+    // 18 Decimal places
+    function decMul18(uint256 x, uint256 y) internal pure returns (uint256) {
+        uint256 prod_xy = mul(x, y);
+
+        return add(prod_xy, TEN18 / 2) / TEN18;
+    }
+
+    function decDiv18(uint256 x, uint256 y) internal pure returns (uint256) {
+        uint256 prod_xTEN18 = mul(x, TEN18);
+
+        return add(prod_xTEN18, y / 2) / y;
     }
 }
