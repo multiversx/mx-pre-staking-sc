@@ -448,56 +448,63 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
             const revertMessage = "[Withdraw] Not enough days passed";
             // 0 Days passed
             await expectRevert(this.stakingContract.initiateWithdrawal(from(account1)), revertMessage);
-            const instervals1 = await this.stakingContract._getIntervalsPassed();
-            console.log('instervals1: ',instervals1.toString());
 
             // 26 Days passed
             await time.increase(time.duration.days(26));
-            // await expectRevert(this.stakingContract.initiateWithdrawal(from(account1)), revertMessage);
-            const instervals2 = await this.stakingContract._getIntervalsPassed();
-            console.log('instervals2: ',instervals2.toString());
+            await expectRevert(this.stakingContract.initiateWithdrawal(from(account1)), revertMessage);
+
+            // 27 Days passed
+            await time.increase(time.duration.days(1));
+            await expectRevert(this.stakingContract.initiateWithdrawal(from(account1)), revertMessage);
         });
 
         it('4.13. initiateWithdrawal: should revert if the account has no stake deposit', async function () {
             // 30 Days passed
-            await time.increase(time.duration.days(4));
+            await time.increase(time.duration.days(3));
             const revertMessage = "[Initiate Withdrawal] There is no stake deposit for this account";
             await expectRevert(this.stakingContract.initiateWithdrawal(from(unauthorized)), revertMessage)
         });
 
-        it('4.14. initiateWithdrawal: should revert if account has already initiated the withdrawal', async function () {
-            const revertMessage = "[Initiate Withdrawal] You already initiated the withdrawal";
+        it('4.14. initiateWithdrawal: should emit the WithdrawInitiated(msg.sender, stakeDeposit.amount) event', async function () {
+            const eventData = {
+                account: account1,
+                amount: depositAmount,
+            };
+            const {logs} = await this.stakingContract.initiateWithdrawal(from(account1));
+            expectEvent.inLogs(logs, 'WithdrawInitiated', eventData);
+        });
 
-            await this.stakingContract.initiateWithdrawal(from(account1));
+        it('4.16. initiateWithdrawal: should revert if account has already initiated the withdrawal', async function () {
+            const revertMessage = "[Initiate Withdrawal] You already initiated the withdrawal";
             await expectRevert(this.stakingContract.initiateWithdrawal(from(account1)), revertMessage)
         });
 
-        it('4.15. initiateWithdrawal: should emit the WithdrawInitiated(msg.sender, stakeDeposit.amount) event', async function () {
-
-        });
-
-        it('4.16. initiateWithdrawal: should modify the stake deposit to include the endDate and current base reward history checkpoint', async function () {
-
-        });
-
         it('4.17. executeWithdrawal: should revert when contract is paused', async function () {
-
-        });
-
-        it('4.18. executeWithdrawal: should revert when contract is not setup', async function () {
-
+            const revertMessage = "Pausable: paused";
+            await this.stakingContract.pause();
+            await expectRevert(this.stakingContract.executeWithdrawal(from(account1)), revertMessage);
+            await this.stakingContract.unpause();
         });
 
         it('4.19. executeWithdrawal: should revert if unstaking period did not pass', async function () {
             const revertMessage = '[Withdraw] The unstaking period did not pass';
+            await expectRevert(this.stakingContract.executeWithdrawal(from(account1)), revertMessage);
         });
 
         it('4.20. executeWithdrawal: should revert if transfer fails on initial deposit amount', async function () {
-            const message = "[Withdraw] Something went wrong while transferring your initial deposit";
+            const revertMessage = "[Withdraw] Something went wrong while transferring your initial deposit";
         });
 
         it('4.21. executeWithdrawal: should revert if transfer fails on reward', async function () {
-            const message = "[Withdraw] Something went wrong while transferring your reward";
+            const revertMessage = "[Withdraw] Something went wrong while transferring your reward";
+
+            await this.token.decreaseAllowance(
+                this.stakingContract.address,
+                rewardsAmount.sub(BigNumber(123)),
+                from(rewardsAddress)
+            );
+
+            await expectRevert(this.stakingContract.executeWithdrawal(from(account1)), revertMessage);
         });
 
         it('4.22. executeWithdrawal: should transfer the initial staking deposit and the correct reward and emit WithdrawExecuted(msg.sender, amount, reward)', async function () {

@@ -158,7 +158,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
     {
         StakeDeposit storage stakeDeposit = _stakeDeposits[msg.sender];
         require(stakeDeposit.exists, "[Initiate Withdrawal] There is no stake deposit for this account");
-        require(stakeDeposit.endDate != 0, "[Initiate Withdrawal] You already initiated the withdrawal");
+        require(stakeDeposit.endDate == 0, "[Initiate Withdrawal] You already initiated the withdrawal");
 
         stakeDeposit.endDate = now;
         stakeDeposit.endCheckpointIndex = baseRewardHistory.length - 1;
