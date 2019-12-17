@@ -363,56 +363,48 @@ contract StakingContract is Pausable, ReentrancyGuard {
         }
 
         uint256 stakingPeriod = (stakeDeposit.endDate - stakeDeposit.startDate) / 1 days;
-        uint256 weightedAverageBaseReward = _computeWeightedAverageBaseReward(stakeDeposit, stakingPeriod);
-        uint256 multiplier = stakingPeriod.mul(rewardConfig.multiplier).div(100);
-        uint256 rewardRate = weightedAverageBaseReward.add(multiplier);
+        uint256 weightedAverage = _computeWeightedAverageBaseReward(stakeDeposit);
 
-        return stakeDeposit.amount.mul(rewardRate).div(100);
+        return stakeDeposit.amount.mul(weightedAverage).div(36500);
     }
 
-    function _computeWeightedAverageBaseReward(StakeDeposit memory stakeDeposit, uint256 stakingPeriod)
+    function _computeWeightedAverageBaseReward(StakeDeposit memory stakeDeposit)
     private
     view
     returns (uint256)
     {
-        uint256 segmentStakingPeriod;
-        uint256 dailyRewardRate;
-        uint256 segmentBaseReward;
-        uint256 baseRewardSum;
+        uint256 weight;
+        uint256 rate;
 
         // The contract never left the first checkpoint
         if (stakeDeposit.startCheckpointIndex == stakeDeposit.endCheckpointIndex) {
-            segmentStakingPeriod = (stakeDeposit.endDate - stakeDeposit.startDate) / 1 days;
-            dailyRewardRate = _baseRewardFromHistoryIndex(stakeDeposit.startCheckpointIndex).anualRewardRate.decDiv18(365);
-            baseRewardSum = segmentStakingPeriod.decMul18(dailyRewardRate);
+            weight = (stakeDeposit.endDate - stakeDeposit.startDate) / 1 days;
+            rate = _baseRewardFromHistoryIndex(stakeDeposit.startCheckpointIndex).anualRewardRate;
 
-            return baseRewardSum.decDiv18(stakingPeriod);
+            return rate.mul(weight);
         }
 
         // Computing the first segment base reward
         // User could deposit in the middle of the segment so we need to get the segment from which the user deposited
         // to the moment the base reward changes
-        segmentStakingPeriod = (baseRewardHistory[stakeDeposit.startCheckpointIndex].endTimestamp - stakeDeposit.startDate) / 1 days;
-        dailyRewardRate = _baseRewardFromHistoryIndex(stakeDeposit.startCheckpointIndex).anualRewardRate.div(365);
-        segmentBaseReward = segmentStakingPeriod.mul(dailyRewardRate);
-        baseRewardSum = segmentBaseReward;
+        weight = (baseRewardHistory[stakeDeposit.startCheckpointIndex].endTimestamp - stakeDeposit.startDate) / 1 days;
+        rate = _baseRewardFromHistoryIndex(stakeDeposit.startCheckpointIndex).anualRewardRate;
+        uint256 baseRewardSum = rate.mul(weight);
 
         // Starting from the second checkpoint because the first one is already computed
         for (uint256 i = stakeDeposit.startCheckpointIndex + 1; i < stakeDeposit.endCheckpointIndex; i++) {
-            segmentStakingPeriod = (baseRewardHistory[i].endTimestamp - baseRewardHistory[i].startTimestamp) / 1 days;
-            dailyRewardRate = _baseRewardFromHistoryIndex(i).anualRewardRate.div(365);
-            segmentBaseReward = dailyRewardRate.mul(segmentStakingPeriod);
-            baseRewardSum = baseRewardSum.add(segmentBaseReward);
+            weight = (baseRewardHistory[i].endTimestamp - baseRewardHistory[i].startTimestamp) / 1 days;
+            rate = _baseRewardFromHistoryIndex(i).anualRewardRate;
+            baseRewardSum = baseRewardSum.add(rate.mul(weight));
         }
 
         // Computing the base reward for the last segment
         // days between start timestamp of the last checkpoint to the moment he initialized the withdrawal
-        segmentStakingPeriod = (stakeDeposit.endDate - baseRewardHistory[stakeDeposit.endCheckpointIndex].startTimestamp) / 1 days;
-        dailyRewardRate = _baseRewardFromHistoryIndex(stakeDeposit.endCheckpointIndex).anualRewardRate.div(365);
-        segmentBaseReward = segmentStakingPeriod.mul(dailyRewardRate);
-        baseRewardSum = baseRewardSum.add(segmentBaseReward);
+        weight = (stakeDeposit.endDate - baseRewardHistory[stakeDeposit.endCheckpointIndex].startTimestamp) / 1 days;
+        rate = _baseRewardFromHistoryIndex(stakeDeposit.endCheckpointIndex).anualRewardRate;
+        baseRewardSum = baseRewardSum.add(weight.mul(rate));
 
-        return baseRewardSum.div(stakingPeriod);
+        return baseRewardSum;
     }
 
     function _addBaseReward(uint256 anualRewardRate, uint256 lowerBound, uint256 upperBound)

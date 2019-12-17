@@ -155,17 +155,4 @@ library SafeMath {
         require(b != 0, errorMessage);
         return a % b;
     }
-
-    // 18 Decimal places
-    function decMul18(uint256 x, uint256 y) internal pure returns (uint256) {
-        uint256 prod_xy = mul(x, y);
-
-        return add(prod_xy, TEN18 / 2) / TEN18;
-    }
-
-    function decDiv18(uint256 x, uint256 y) internal pure returns (uint256) {
-        uint256 prod_xTEN18 = mul(x, TEN18);
-
-        return add(prod_xTEN18, y / 2) / y;
-    }
 }
