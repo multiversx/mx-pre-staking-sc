@@ -211,7 +211,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
         return _computeReward(_stakeDeposits[msg.sender]);
     }
 
-    function stakeDeposit()
+    function getStakeDeposit()
     onlyAfterSetup
     external
     view
@@ -270,8 +270,6 @@ contract StakingContract is Pausable, ReentrancyGuard {
 
         return (c.baseRewardIndex, c.startTimestamp, c.endTimestamp, c.fromBlock);
     }
-
-
 
     // OWNER SETUP
     function setupStakingLimit(uint256 maxAmount, uint256 initialAmount, uint256 daysInterval, uint256 unstakingPeriod)
@@ -339,6 +337,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
     returns (uint256)
     {
         uint256 intervalsPassed = _getIntervalsPassed();
+        intervalsPassed = intervalsPassed == 0 ? 1 : intervalsPassed;
 
         // initialLimit * ((now - launchMoment) / interval)
         return stakingLimitConfig.initialAmount.mul(intervalsPassed.min(stakingLimitConfig.maxIntervals));
@@ -349,10 +348,10 @@ contract StakingContract is Pausable, ReentrancyGuard {
     view
     returns (uint256)
     {
-        return ((now - launchTimestamp) * 1 days) / stakingLimitConfig.daysInterval;
+        return ((now - launchTimestamp) * 1 days ) / (stakingLimitConfig.daysInterval * 1 days);
     }
 
-    function _computeReward(StakeDeposit storage deposit)
+    function _computeReward(StakeDeposit storage stakeDeposit)
     private
     view
     returns (uint256)
@@ -361,12 +360,12 @@ contract StakingContract is Pausable, ReentrancyGuard {
             return 0;
         }
 
-        uint256 stakingPeriod = (deposit.endDate - deposit.startDate) * 1 days;
-        uint256 weightedAverageBaseReward = _computeWeightedAverageBaseReward(deposit, stakingPeriod);
+        uint256 stakingPeriod = (stakeDeposit.endDate - stakeDeposit.startDate) * 1 days;
+        uint256 weightedAverageBaseReward = _computeWeightedAverageBaseReward(stakeDeposit, stakingPeriod);
         uint256 multiplier = stakingPeriod.mul(rewardConfig.multiplier).div(100);
         uint256 rewardRate = weightedAverageBaseReward.add(multiplier);
 
-        return deposit.amount.mul(rewardRate).div(100);
+        return stakeDeposit.amount.mul(rewardRate).div(100);
     }
 
     function _computeWeightedAverageBaseReward(StakeDeposit memory stakeDeposit, uint256 stakingPeriod)
