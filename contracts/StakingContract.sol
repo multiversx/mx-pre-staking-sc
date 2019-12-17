@@ -172,13 +172,14 @@ contract StakingContract is Pausable, ReentrancyGuard {
     external
     {
         StakeDeposit storage stakeDeposit = _stakeDeposits[msg.sender];
-
+        require(stakeDeposit.exists, "[Withdraw] There is no stake deposit for this account");
+        require(stakeDeposit.endDate != 0, "[Withdraw] Withdraw is not initialized");
         // validate enough days have passed from initiating the withdrawal
-        uint256 daysPassed = (stakeDeposit.endDate - stakeDeposit.startDate) * 1 days;
-        require(daysPassed >= stakingLimitConfig.unstakingPeriod, '[Withdraw] The unstaking period did not pass');
+        uint256 daysPassed = (now - stakeDeposit.endDate) / 1 days;
+        require(stakingLimitConfig.unstakingPeriod < daysPassed, "[Withdraw] The unstaking period did not pass");
 
-        uint256 reward = _computeReward(stakeDeposit);
         uint256 amount = stakeDeposit.amount;
+        uint256 reward = _computeReward(stakeDeposit);
 
         stakeDeposit.amount = 0;
         stakeDeposit.exists = false;
@@ -188,6 +189,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
 
         require(token.transfer(msg.sender, amount), "[Withdraw] Something went wrong while transferring your initial deposit");
         require(token.transferFrom(rewardsAddress, msg.sender, reward), "[Withdraw] Something went wrong while transferring your reward");
+
         emit WithdrawExecuted(msg.sender, amount, reward);
     }
 

@@ -64,14 +64,6 @@ const transformRewardToString = element => {
 const from = (account) => ({from: account});
 
 contract('StakingContract', function ([owner, rewardsAddress, unauthorized, account1, account2, account3]) {
-    const newContract = async function () {
-        this.token = await Token.new('ElrondToken', 'ERD', BigNumber(18));
-        this.stakingContract = await StakingContract.new(this.token.address, rewardsAddress);
-        await this.token.mint(rewardsAddress, rewardsAmount);
-        await this.token.mint(account1, depositAmount);
-        await this.token.approve(this.stakingContract.address, depositAmount, from(account1));
-    };
-
     describe('1. Before deployment', async function () {
         before(async function () {
             this.token = await Token.new('ElrondToken', 'ERD', BigNumber(18));
@@ -362,7 +354,13 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
     });
 
     describe('4. Deposit and withdraw', async function () {
-        before(newContract);
+        before(async function () {
+            this.token = await Token.new('ElrondToken', 'ERD', BigNumber(18));
+            this.stakingContract = await StakingContract.new(this.token.address, rewardsAddress);
+            await this.token.mint(rewardsAddress, rewardsAmount);
+            await this.token.mint(account1, depositAmount);
+            await this.token.approve(this.stakingContract.address, depositAmount, from(account1));
+        });
 
         it('4.1. deposit: should revert when contract is not setup', async function () {
             const revertMessage = '[Lifecycle] Setup is not done';
@@ -486,17 +484,13 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
             await this.stakingContract.unpause();
         });
 
-        it('4.19. executeWithdrawal: should revert if unstaking period did not pass', async function () {
+        it('4.18. executeWithdrawal: should revert if unstaking period did not pass', async function () {
             const revertMessage = '[Withdraw] The unstaking period did not pass';
             await expectRevert(this.stakingContract.executeWithdrawal(from(account1)), revertMessage);
         });
 
-        it('4.20. executeWithdrawal: should revert if transfer fails on initial deposit amount', async function () {
-            const revertMessage = "[Withdraw] Something went wrong while transferring your initial deposit";
-        });
-
-        it('4.21. executeWithdrawal: should revert if transfer fails on reward', async function () {
-            const revertMessage = "[Withdraw] Something went wrong while transferring your reward";
+        it('4.20. executeWithdrawal: should revert if transfer fails on reward', async function () {
+            const revertMessage = "ERC20: transfer amount exceeds allowance";
 
             await this.token.decreaseAllowance(
                 this.stakingContract.address,
@@ -507,15 +501,15 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
             await expectRevert(this.stakingContract.executeWithdrawal(from(account1)), revertMessage);
         });
 
-        it('4.22. executeWithdrawal: should transfer the initial staking deposit and the correct reward and emit WithdrawExecuted(msg.sender, amount, reward)', async function () {
+        it('4.21. executeWithdrawal: should transfer the initial staking deposit and the correct reward and emit WithdrawExecuted(msg.sender, amount, reward)', async function () {
 
         });
 
-        it('4.23. executeWithdrawal: should update the current total stake', async function () {
+        it('4.22. executeWithdrawal: should update the current total stake', async function () {
 
         });
 
-        it('4.24. executeWithdrawal: should update the base reward history according to the new currentTotalStake', async function () {
+        it('4.23. executeWithdrawal: should update the base reward history according to the new currentTotalStake', async function () {
 
         });
     });
