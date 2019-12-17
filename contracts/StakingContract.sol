@@ -391,22 +391,21 @@ contract StakingContract is Pausable, ReentrancyGuard {
         // to the moment the base reward changes
         weight = (baseRewardHistory[stakeDeposit.startCheckpointIndex].endTimestamp - stakeDeposit.startDate) / 1 days;
         rate = _baseRewardFromHistoryIndex(stakeDeposit.startCheckpointIndex).anualRewardRate;
-        uint256 baseRewardSum = rate.mul(weight);
+        uint256 weightedAverage = rate.mul(weight);
 
         // Starting from the second checkpoint because the first one is already computed
         for (uint256 i = stakeDeposit.startCheckpointIndex + 1; i < stakeDeposit.endCheckpointIndex; i++) {
             weight = (baseRewardHistory[i].endTimestamp - baseRewardHistory[i].startTimestamp) / 1 days;
             rate = _baseRewardFromHistoryIndex(i).anualRewardRate;
-            baseRewardSum = baseRewardSum.add(rate.mul(weight));
+            weightedAverage = weightedAverage.add(rate.mul(weight));
         }
 
         // Computing the base reward for the last segment
         // days between start timestamp of the last checkpoint to the moment he initialized the withdrawal
         weight = (stakeDeposit.endDate - baseRewardHistory[stakeDeposit.endCheckpointIndex].startTimestamp) / 1 days;
         rate = _baseRewardFromHistoryIndex(stakeDeposit.endCheckpointIndex).anualRewardRate;
-        baseRewardSum = baseRewardSum.add(weight.mul(rate));
 
-        return baseRewardSum;
+        return weightedAverage.add(weight.mul(rate));
     }
 
     function _addBaseReward(uint256 anualRewardRate, uint256 lowerBound, uint256 upperBound)
