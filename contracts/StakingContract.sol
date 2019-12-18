@@ -202,15 +202,15 @@ contract StakingContract is Pausable, ReentrancyGuard {
         return _computeCurrentStakingLimit();
     }
 
-    function currentReward()
+    function currentReward(address account)
     onlyAfterSetup
     external
     view
-    returns (uint256)
+    returns (uint256, uint256)
     {
-        require(_stakeDeposits[msg.sender].exists, "[Validation] This account doesn't have a stake deposit");
+        require(_stakeDeposits[account].exists, "[Validation] This account doesn't have a stake deposit");
 
-        return _computeReward(_stakeDeposits[msg.sender]);
+        return (_stakeDeposits[account].amount, _computeReward(_stakeDeposits[account]));
     }
 
     function getStakeDeposit()
@@ -329,7 +329,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
             _addBaseReward(anualRewardRates[i], lowerBounds[i], upperBounds[i]);
         }
 
-        uint256 highestUpperBound = upperBounds[upperBounds.length -1];
+        uint256 highestUpperBound = upperBounds[upperBounds.length - 1];
 
         // Add the zero annual reward rate
         _addBaseReward(0, highestUpperBound, highestUpperBound + 10);

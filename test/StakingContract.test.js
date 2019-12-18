@@ -17,7 +17,7 @@ const Status = {
 };
 
 const depositAmount = BigNumber(1e+6);
-const rewardsAmount = BigNumber(5e+9);
+const rewardsAmount = BigNumber(400e+6);
 const stakingConfig = {
     maxAmount: BigNumber(5e+9),
     initialAmount: BigNumber(5e+8),
