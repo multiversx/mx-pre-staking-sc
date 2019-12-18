@@ -193,6 +193,30 @@ contract StakingContract is Pausable, ReentrancyGuard {
         emit WithdrawExecuted(msg.sender, amount, reward);
     }
 
+    function toggleRewards(bool enabled)
+    onlyOwner
+    onlyAfterSetup
+    external
+    {
+        Status newStatus = enabled ? Status.Running : Status.RewardsDisabled;
+        require(currentStatus != newStatus, "[ToggleRewards] This status is already set");
+
+        uint256 index;
+
+        if (newStatus == Status.RewardsDisabled) {
+            index = rewardConfig.baseRewards.length - 1;
+        }
+
+        if (newStatus == Status.Running) {
+            index = _computeCurrentBaseReward();
+        }
+
+        _insertNewCheckpoint(index);
+
+        currentStatus = newStatus;
+    }
+
+    // VIEW FUNCTIONS FOR HELPING THE USER AND CLIENT INTERFACE
     function currentStakingLimit()
     onlyAfterSetup
     public
@@ -202,15 +226,15 @@ contract StakingContract is Pausable, ReentrancyGuard {
         return _computeCurrentStakingLimit();
     }
 
-    function currentReward()
+    function currentReward(address account)
     onlyAfterSetup
     external
     view
-    returns (uint256)
+    returns (uint256, uint256)
     {
-        require(_stakeDeposits[msg.sender].exists, "[Validation] This account doesn't have a stake deposit");
+        require(_stakeDeposits[account].exists, "[Validation] This account doesn't have a stake deposit");
 
-        return _computeReward(_stakeDeposits[msg.sender]);
+        return (_stakeDeposits[account].amount, _computeReward(_stakeDeposits[account]));
     }
 
     function getStakeDeposit()
@@ -243,15 +267,6 @@ contract StakingContract is Pausable, ReentrancyGuard {
         BaseReward memory br = rewardConfig.baseRewards[index];
 
         return (br.anualRewardRate, br.lowerBound, br.upperBound);
-    }
-
-    function toggleRewards(bool enabled)
-    onlyOwner
-    onlyAfterSetup
-    external
-    {
-        currentStatus = enabled ? Status.Running : Status.RewardsDisabled;
-        // TODO: Update the baseRewardHistory with the 0 BaseReward
     }
 
     function baseRewardHistoryLength()
@@ -292,7 +307,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
         stakingLimitConfig.maxIntervals = maxIntervals;
 
         setupState.staking = true;
-        _checkSetupComplete();
+        _updateSetupState();
     }
 
     function setupRewards(
@@ -315,15 +330,20 @@ contract StakingContract is Pausable, ReentrancyGuard {
             _addBaseReward(anualRewardRates[i], lowerBounds[i], upperBounds[i]);
         }
 
+        uint256 highestUpperBound = upperBounds[upperBounds.length - 1];
+
+        // Add the zero annual reward rate
+        _addBaseReward(0, highestUpperBound, highestUpperBound + 10);
+
         // initiate baseRewardHistory with the first one which should start from 0
         _initBaseRewardHistory();
 
         setupState.rewards = true;
-        _checkSetupComplete();
+        _updateSetupState();
     }
 
     // INTERNAL
-    function _checkSetupComplete()
+    function _updateSetupState()
     private
     {
         if (!setupState.rewards || !setupState.staking) {
@@ -353,24 +373,20 @@ contract StakingContract is Pausable, ReentrancyGuard {
         return ((now - launchTimestamp) / stakingLimitConfig.daysInterval) / 1 days;
     }
 
-    function _computeReward(StakeDeposit storage stakeDeposit)
+    function _computeReward(StakeDeposit memory stakeDeposit)
     private
     view
     returns (uint256)
     {
-        if (currentStatus == Status.RewardsDisabled) {
-            return 0;
-        }
-
-        uint256 scale = 10**18;
+        uint256 scale = 10 ** 18;
         uint256 denominator = scale.mul(36500);
-        uint256 weightedAverage = (_computeWeightedAverageBaseReward(stakeDeposit)).mul(scale);
+        uint256 weightedAverage = (_computeRewardRatesWeightedMean(stakeDeposit)).mul(scale);
         uint256 accumulator = weightedAverage.div(100);
 
         return stakeDeposit.amount.mul(weightedAverage.add(accumulator)) / denominator;
     }
 
-    function _computeWeightedAverageBaseReward(StakeDeposit memory stakeDeposit)
+    function _computeRewardRatesWeightedMean(StakeDeposit memory stakeDeposit)
     private
     view
     returns (uint256)
@@ -426,38 +442,43 @@ contract StakingContract is Pausable, ReentrancyGuard {
     function _updateBaseRewardHistory()
     private
     {
-        (, BaseReward memory currentBaseReward) = _currentBaseReward();
+        if (currentStatus == Status.RewardsDisabled) {
+            return;
+        }
+
+        BaseReward memory currentBaseReward = _currentBaseReward();
 
         // Do nothing if currentTotalStake is in the current base reward bounds
         if (currentBaseReward.lowerBound <= currentTotalStake && currentTotalStake <= currentBaseReward.upperBound) {
             return;
         }
 
-        // TODO: Insert mechanism for 0 reward periods based on Status.RewardsDisabled and a BaseReward of anual rate 0
+        uint256 newIndex = _computeCurrentBaseReward();
+        _insertNewCheckpoint(newIndex);
+    }
 
+    function _insertNewCheckpoint(uint256 newIndex)
+    private
+    {
         BaseRewardCheckpoint storage oldCheckPoint = _lastBaseRewardCheckpoint();
-        (uint256 index,) = _computeCurrentBaseReward();
 
         if (oldCheckPoint.fromBlock < block.number) {
             oldCheckPoint.endTimestamp = now;
-            BaseRewardCheckpoint storage newCheckpoint = baseRewardHistory[baseRewardHistory.length];
-            newCheckpoint.baseRewardIndex = index;
-            newCheckpoint.startTimestamp = now;
-            newCheckpoint.fromBlock = block.number;
+            baseRewardHistory.push(BaseRewardCheckpoint(newIndex, now, 0, block.number));
         } else {
-            oldCheckPoint.baseRewardIndex = index;
+            oldCheckPoint.baseRewardIndex = newIndex;
         }
     }
 
     function _currentBaseReward()
     private
     view
-    returns (uint256, BaseReward memory)
+    returns (BaseReward memory)
     {
         // search for the current base reward from current total staked amount
         uint256 currentBaseRewardIndex = (_lastBaseRewardCheckpoint()).baseRewardIndex;
 
-        return (currentBaseRewardIndex, rewardConfig.baseRewards[currentBaseRewardIndex]);
+        return rewardConfig.baseRewards[currentBaseRewardIndex];
     }
 
     function _baseRewardFromHistoryIndex(uint256 index)
@@ -479,11 +500,13 @@ contract StakingContract is Pausable, ReentrancyGuard {
     function _computeCurrentBaseReward()
     private
     view
-    returns (uint256, BaseReward memory)
+    returns (uint256)
     {
         uint256 index = rewardConfig.upperBounds.findUpperBound(currentTotalStake);
 
-        return (index, rewardConfig.baseRewards[index]);
+        require(index < rewardConfig.upperBounds.length, "[NotFound] The current total staked is out of bounds");
+
+        return index;
     }
 
     function _validateSetupRewardsParameters
