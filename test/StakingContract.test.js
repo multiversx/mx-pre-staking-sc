@@ -3,7 +3,7 @@ const {expect} = require('chai');
 const _ = require('lodash');
 
 const {expectEvent, expectRevert, constants, time, balance} = require('@openzeppelin/test-helpers');
-const {BigNumber, expectInvalidArgument, timeTravel} = require('./helper');
+const {BigNumber, expectInvalidArgument, getEventProperty} = require('./helper');
 
 // CONTRACTS
 const StakingContract = artifacts.require('StakingContract');
@@ -318,7 +318,7 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
             let actualRewardsConfig = [];
             let baseReward;
 
-            for (let i = 0; i < anualRewardRates.length; i++) {
+            for (let i = 0; i < actualRewardsLength; i++) {
                 baseReward = await this.stakingContract.baseReward(i.toString());
                 actualRewardsConfig.push({
                     anualRewardRate: baseReward['0'],
@@ -535,7 +535,64 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
         });
     });
 
-    describe('5. Staking limit waves', async function () {
+    describe('5. Disable rewards', async function () {
+        before(async function () {
+            this.token = await Token.new('ElrondToken', 'ERD', BigNumber(18));
+            this.stakingContract = await StakingContract.new(this.token.address, rewardsAddress);
+            await this.token.mint(rewardsAddress, rewardsAmount);
+            await this.token.mint(account1, depositAmount);
+            await this.token.mint(account2, depositAmount);
+            await this.token.mint(account3, depositAmount);
+            // allow staking contract
+            await this.token.approve(this.stakingContract.address, rewardsAmount, from(rewardsAddress));
+            await this.token.approve(this.stakingContract.address, depositAmount, from(account1));
+            await this.token.approve(this.stakingContract.address, depositAmount, from(account2));
+            await this.token.approve(this.stakingContract.address, depositAmount, from(account3));
+
+            // setup staking contract
+            await this.stakingContract.setupStakingLimit(
+                stakingConfig.maxAmount, stakingConfig.initialAmount, stakingConfig.daysInterval, stakingConfig.unstakingPeriod
+            );
+            await this.stakingContract.setupRewards(
+                rewardsConfig.multiplier,
+                anualRewardRates,
+                lowerBounds,
+                upperBounds
+            );
+            await this.stakingContract.unpause();
+        });
+
+        it('should allow only the owner to disable rewards', async function () {
+            const msg = "Ownable: caller is not the owner";
+            await expectRevert(this.stakingContract.toggleRewards(true, from(unauthorized)), msg);
+        });
+
+        it("should reduce the reward to half if rewards are disabled for 15 out of 30 days", async function () {
+            // Account 1
+            await this.stakingContract.deposit(depositAmount, from(account1));
+            await time.increase(time.duration.days(15));
+            await this.stakingContract.toggleRewards(false);
+            await time.increase(time.duration.days(15));
+            await this.stakingContract.initiateWithdrawal(from(account1));
+            await time.increase(time.duration.days(8));
+            const tx1 = await this.stakingContract.executeWithdrawal(from(account1));
+
+            // Account 2
+            await this.stakingContract.toggleRewards(true);
+            await this.stakingContract.deposit(depositAmount, from(account2));
+            await time.increase(time.duration.days(30));
+            await this.stakingContract.initiateWithdrawal(from(account2));
+            await time.increase(time.duration.days(8));
+            const tx2 = await this.stakingContract.executeWithdrawal(from(account2));
+
+            const reward1 = getEventProperty(tx1.logs, 'WithdrawExecuted', 'reward');
+            const reward2 = getEventProperty(tx2.logs, 'WithdrawExecuted', 'reward');
+
+            expect(reward1).to.be.bignumber.equal(reward2.div(BigNumber(2)));
+        });
+    });
+
+    describe('6. Staking limit waves', async function () {
         before(async function () {
             this.token = await Token.new('ElrondToken', 'ERD', BigNumber(18));
             this.stakingContract = await StakingContract.new(this.token.address, rewardsAddress);
@@ -572,44 +629,12 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
 
     });
 
-    describe('Function: getCurrentStakingLimit', async function () {
-        it('should revert if contract is not setup', async function () {
+    describe('7. View functions', async function () {
+        it('getCurrentStakingLimit: should ', async function () {
 
         });
 
-        it('should return the correct current staking limit', async function () {
-
-        });
-    });
-
-    describe('Function: getCurrentReward', async function () {
-        it('should revert if contract is not setup', async function () {
-
-        });
-
-        it('should revert if account does not have a stake deposit', async function () {
-            const message = "[Validation] This account doesn't have a stake deposit";
-        });
-
-        it('should return the correct current reward for the calling account', async function () {
-
-        });
-    });
-
-    describe('Function: toggleRewards', async function () {
-        it('should revert if not called by the contract owner', async function () {
-
-        });
-
-        it('should revert if contract is not setup', async function () {
-
-        });
-
-        it('should change the contract status to Running or RewardsDisabled based on the enabled parameter', async function () {
-
-        });
-
-        it('should update the baseRewardsHistory with the 0 reward', async function () {
+        it('getCurrentReward: should ', async function () {
 
         });
     });
