@@ -327,11 +327,19 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
                 });
             }
             actualRewardsConfig = actualRewardsConfig.map(transformRewardToString);
-            const expectedRewardsConfig = rewardsConfig.rewardRates.map(transformRewardToString);
+            let expectedRewardsConfig = rewardsConfig.rewardRates.map(transformRewardToString);
 
-            expect(expectedRewardsConfig).to.deep.equal(actualRewardsConfig);
-            expect(rewardsConfig.multiplier.toString()).to.equal(actualMultiplier.toString());
-            expect(expectedRewardsConfig.length).to.equal(actualRewardsLength.toNumber());
+            // Adding the 0 annual reward rate
+            expectedRewardsConfig.push(        {
+                    anualRewardRate: '0',
+                    lowerBound: BigNumber(5e+9).toString(),
+                    upperBound: BigNumber(5e+9).add(BigNumber(10)).toString(),
+                }
+            );
+
+            expect(actualRewardsConfig).to.deep.equal(expectedRewardsConfig);
+            expect(actualMultiplier.toString()).to.equal(rewardsConfig.multiplier.toString());
+            expect(actualRewardsLength.toNumber()).to.equal(expectedRewardsConfig.length);
         });
 
         it('3.13. setupRewards: should initialize the base rewards history with the first BaseReward which is also the smallest', async function () {
