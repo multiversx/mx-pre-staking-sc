@@ -27,7 +27,7 @@ const stakingConfig = {
 };
 
 const rewardsConfig = {
-    multiplier: BigNumber(1),
+    multiplier: BigNumber(5),
     rewardRates: [
         {
             anualRewardRate: BigNumber(16),
