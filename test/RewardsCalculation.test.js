@@ -88,7 +88,7 @@ contract('StakingContract', function ([owner, rewardsAddress, account1, account2
             await this.stakingContract.unpause();
         });
 
-        it('1.1 should return 79134 reward', async function () {
+        it('1.1 (Contract returns the right amount but the test needs rewritten) should return 79134 reward', async function () {
             const stakingPeriod = BigNumber(90);
             const weightedSum = BigNumber(1992);
             const weightedAverage = weightedSum.div(stakingPeriod);
