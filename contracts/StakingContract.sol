@@ -380,13 +380,13 @@ contract StakingContract is Pausable, ReentrancyGuard {
     {
         uint256 scale = 10 ** 18;
         uint256 denominator = scale.mul(36500);
-        uint256 weightedAverage = (_computeRewardRatesWeightedMean(stakeDeposit)).mul(scale);
-        uint256 accumulator = weightedAverage.div(100);
+        uint256 weightedSum = (_computeRewardRatesWeightedSum(stakeDeposit)).mul(scale);
+        uint256 accumulator = weightedSum.div(100);
 
-        return stakeDeposit.amount.mul(weightedAverage.add(accumulator)) / denominator;
+        return stakeDeposit.amount.mul(weightedSum.add(accumulator)) / denominator;
     }
 
-    function _computeRewardRatesWeightedMean(StakeDeposit memory stakeDeposit)
+    function _computeRewardRatesWeightedSum(StakeDeposit memory stakeDeposit)
     private
     view
     returns (uint256)
