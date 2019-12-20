@@ -180,7 +180,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
         // validate enough days have passed from initiating the withdrawal
         // solium-disable-next-line security/no-block-members
         uint256 daysPassed = (block.timestamp - stakeDeposit.endDate) / 1 days;
-        require(stakingLimitConfig.unstakingPeriod < daysPassed, "[Withdraw] The unstaking period did not pass");
+        require(stakingLimitConfig.unstakingPeriod <= daysPassed, "[Withdraw] The unstaking period did not pass");
 
         uint256 amount = stakeDeposit.amount;
         uint256 reward = _computeReward(stakeDeposit);
@@ -378,33 +378,43 @@ contract StakingContract is Pausable, ReentrancyGuard {
         return ((block.timestamp - launchTimestamp) / stakingLimitConfig.daysInterval) / 1 days;
     }
 
+    event Debug(uint256 weightedAverage,uint256 accumulator,uint256 effectiveRate,uint256 denominator);
+
     function _computeReward(StakeDeposit memory stakeDeposit)
     private
     view
     returns (uint256)
     {
         uint256 scale = 10 ** 18;
-        uint256 denominator = scale.mul(36500);
-        uint256 weightedSum = (_computeRewardRatesWeightedSum(stakeDeposit)).mul(scale);
-        uint256 accumulator = weightedSum.div(100);
+        (uint256 weightedSum, uint256 stakingPeriod) = _computeRewardRatesWeightedSum(stakeDeposit);
+        // scaling weightedSum and stakingPeriod because the weightedSum is in the thousands magnitude
+        // and we risk losing detail while rounding
+        weightedSum = weightedSum.mul(scale);
 
-        return stakeDeposit.amount.mul(weightedSum.add(accumulator)) / denominator;
+        uint256 weightedAverage = weightedSum.div(stakingPeriod);
+
+        // rewardConfig.multiplier is a percentage expressed in 1/10 (a tenth) of a percent hence we divide by 1000
+        uint256 accumulator = rewardConfig.multiplier.mul(weightedSum).div(1000);
+        uint256 effectiveRate = weightedAverage.add(accumulator);
+        uint256 denominator = scale.mul(36500);
+
+        return stakeDeposit.amount.mul(effectiveRate).mul(stakingPeriod).div(denominator);
     }
 
     function _computeRewardRatesWeightedSum(StakeDeposit memory stakeDeposit)
     private
     view
-    returns (uint256)
+    returns (uint256, uint256)
     {
+        uint256 stakingPeriod = (stakeDeposit.endDate - stakeDeposit.startDate) / 1 days;
         uint256 weight;
         uint256 rate;
 
         // The contract never left the first checkpoint
         if (stakeDeposit.startCheckpointIndex == stakeDeposit.endCheckpointIndex) {
-            weight = (stakeDeposit.endDate - stakeDeposit.startDate) / 1 days;
             rate = _baseRewardFromHistoryIndex(stakeDeposit.startCheckpointIndex).anualRewardRate;
 
-            return rate.mul(weight);
+            return (rate.mul(stakingPeriod), stakingPeriod);
         }
 
         // Computing the first segment base reward
@@ -412,21 +422,22 @@ contract StakingContract is Pausable, ReentrancyGuard {
         // to the moment the base reward changes
         weight = (baseRewardHistory[stakeDeposit.startCheckpointIndex].endTimestamp - stakeDeposit.startDate) / 1 days;
         rate = _baseRewardFromHistoryIndex(stakeDeposit.startCheckpointIndex).anualRewardRate;
-        uint256 weightedAverage = rate.mul(weight);
+        uint256 weightedSum = rate.mul(weight);
 
         // Starting from the second checkpoint because the first one is already computed
         for (uint256 i = stakeDeposit.startCheckpointIndex + 1; i < stakeDeposit.endCheckpointIndex; i++) {
             weight = (baseRewardHistory[i].endTimestamp - baseRewardHistory[i].startTimestamp) / 1 days;
             rate = _baseRewardFromHistoryIndex(i).anualRewardRate;
-            weightedAverage = weightedAverage.add(rate.mul(weight));
+            weightedSum = weightedSum.add(rate.mul(weight));
         }
 
         // Computing the base reward for the last segment
         // days between start timestamp of the last checkpoint to the moment he initialized the withdrawal
         weight = (stakeDeposit.endDate - baseRewardHistory[stakeDeposit.endCheckpointIndex].startTimestamp) / 1 days;
         rate = _baseRewardFromHistoryIndex(stakeDeposit.endCheckpointIndex).anualRewardRate;
+        weightedSum = weightedSum.add(weight.mul(rate));
 
-        return weightedAverage.add(weight.mul(rate));
+        return (weightedSum, stakingPeriod);
     }
 
     function _addBaseReward(uint256 anualRewardRate, uint256 lowerBound, uint256 upperBound)
