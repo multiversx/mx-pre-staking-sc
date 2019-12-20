@@ -122,8 +122,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
 
         token = IERC20(_token);
         rewardsAddress = _rewardsAddress;
-        // solium-disable-next-line security/no-block-members
-        launchTimestamp = block.timestamp;
+        launchTimestamp = now;
         currentStatus = Status.Setup;
     }
 
@@ -139,8 +138,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
 
         StakeDeposit storage stakeDeposit = _stakeDeposits[msg.sender];
         stakeDeposit.amount = stakeDeposit.amount.add(amount);
-        // solium-disable-next-line security/no-block-members
-        stakeDeposit.startDate = block.timestamp;
+        stakeDeposit.startDate = now;
         stakeDeposit.startCheckpointIndex = baseRewardHistory.length - 1;
         stakeDeposit.exists = true;
 
@@ -162,8 +160,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
         require(stakeDeposit.exists, "[Initiate Withdrawal] There is no stake deposit for this account");
         require(stakeDeposit.endDate == 0, "[Initiate Withdrawal] You already initiated the withdrawal");
 
-        // solium-disable-next-line security/no-block-members
-        stakeDeposit.endDate = block.timestamp;
+        stakeDeposit.endDate = now;
         stakeDeposit.endCheckpointIndex = baseRewardHistory.length - 1;
         emit WithdrawInitiated(msg.sender, stakeDeposit.amount);
     }
@@ -178,8 +175,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
         require(stakeDeposit.exists, "[Withdraw] There is no stake deposit for this account");
         require(stakeDeposit.endDate != 0, "[Withdraw] Withdraw is not initialized");
         // validate enough days have passed from initiating the withdrawal
-        // solium-disable-next-line security/no-block-members
-        uint256 daysPassed = (block.timestamp - stakeDeposit.endDate) / 1 days;
+        uint256 daysPassed = (now - stakeDeposit.endDate) / 1 days;
         require(stakingLimitConfig.unstakingPeriod <= daysPassed, "[Withdraw] The unstaking period did not pass");
 
         uint256 amount = stakeDeposit.amount;
@@ -365,7 +361,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
         uint256 intervalsPassed = _getIntervalsPassed();
         intervalsPassed = intervalsPassed == 0 ? 1 : intervalsPassed;
 
-        // initialLimit * ((block.timestamp - launchMoment) / interval)
+        // initialLimit * ((now - launchMoment) / interval)
         return stakingLimitConfig.initialAmount.mul(intervalsPassed.min(stakingLimitConfig.maxIntervals));
     }
 
@@ -374,8 +370,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
     view
     returns (uint256)
     {
-        // solium-disable-next-line security/no-block-members
-        return ((block.timestamp - launchTimestamp) / stakingLimitConfig.daysInterval) / 1 days;
+        return ((now - launchTimestamp) / stakingLimitConfig.daysInterval) / 1 days;
     }
 
     event Debug(uint256 weightedAverage,uint256 accumulator,uint256 effectiveRate,uint256 denominator);
@@ -452,8 +447,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
     {
         require(baseRewardHistory.length == 0, "[Logical] Base reward history has already been initialized");
 
-        // solium-disable-next-line security/no-block-members
-        baseRewardHistory.push(BaseRewardCheckpoint(0, block.timestamp, 0, block.number));
+        baseRewardHistory.push(BaseRewardCheckpoint(0, now, 0, block.number));
     }
 
     function _updateBaseRewardHistory()
@@ -480,10 +474,8 @@ contract StakingContract is Pausable, ReentrancyGuard {
         BaseRewardCheckpoint storage oldCheckPoint = _lastBaseRewardCheckpoint();
 
         if (oldCheckPoint.fromBlock < block.number) {
-            // solium-disable-next-line security/no-block-members
-            oldCheckPoint.endTimestamp = block.timestamp;
-            // solium-disable-next-line security/no-block-members
-            baseRewardHistory.push(BaseRewardCheckpoint(newIndex, block.timestamp, 0, block.number));
+            oldCheckPoint.endTimestamp = now;
+            baseRewardHistory.push(BaseRewardCheckpoint(newIndex, now, 0, block.number));
         } else {
             oldCheckPoint.baseRewardIndex = newIndex;
         }
