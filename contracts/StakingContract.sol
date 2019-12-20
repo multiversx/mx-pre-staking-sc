@@ -373,8 +373,6 @@ contract StakingContract is Pausable, ReentrancyGuard {
         return ((now - launchTimestamp) / stakingLimitConfig.daysInterval) / 1 days;
     }
 
-    event Debug(uint256 weightedAverage,uint256 accumulator,uint256 effectiveRate,uint256 denominator);
-
     function _computeReward(StakeDeposit memory stakeDeposit)
     private
     view
