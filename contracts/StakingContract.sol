@@ -103,13 +103,13 @@ contract StakingContract is Pausable, ReentrancyGuard {
 
     modifier onlyDuringSetup()
     {
-        require(currentStatus == Status.Setup, '[Lifecycle] Setup is already done');
+        require(currentStatus == Status.Setup, "[Lifecycle] Setup is already done");
         _;
     }
 
     modifier onlyAfterSetup()
     {
-        require(currentStatus != Status.Setup, '[Lifecycle] Setup is not done');
+        require(currentStatus != Status.Setup, "[Lifecycle] Setup is not done");
         _;
     }
 
@@ -127,11 +127,11 @@ contract StakingContract is Pausable, ReentrancyGuard {
     }
 
     function deposit(uint256 amount)
+    public
     nonReentrant
     onlyAfterSetup
     whenNotPaused
     guardMaxStakingLimit(amount)
-    public
     {
         require(amount > 0, "[Validation] The stake deposit has to be larger than 0");
         require(!_stakeDeposits[msg.sender].exists, "[Deposit] You already have a stake");
@@ -151,10 +151,10 @@ contract StakingContract is Pausable, ReentrancyGuard {
     }
 
     function initiateWithdrawal()
+    external
     whenNotPaused
     onlyAfterSetup
     guardForPrematureWithdrawal
-    external
     {
         StakeDeposit storage stakeDeposit = _stakeDeposits[msg.sender];
         require(stakeDeposit.exists, "[Initiate Withdrawal] There is no stake deposit for this account");
@@ -166,10 +166,10 @@ contract StakingContract is Pausable, ReentrancyGuard {
     }
 
     function executeWithdrawal()
+    external
     nonReentrant
     whenNotPaused
     onlyAfterSetup
-    external
     {
         StakeDeposit storage stakeDeposit = _stakeDeposits[msg.sender];
         require(stakeDeposit.exists, "[Withdraw] There is no stake deposit for this account");
@@ -194,9 +194,9 @@ contract StakingContract is Pausable, ReentrancyGuard {
     }
 
     function toggleRewards(bool enabled)
+    external
     onlyOwner
     onlyAfterSetup
-    external
     {
         Status newStatus = enabled ? Status.Running : Status.RewardsDisabled;
         require(currentStatus != newStatus, "[ToggleRewards] This status is already set");
@@ -218,8 +218,8 @@ contract StakingContract is Pausable, ReentrancyGuard {
 
     // VIEW FUNCTIONS FOR HELPING THE USER AND CLIENT INTERFACE
     function currentStakingLimit()
-    onlyAfterSetup
     public
+    onlyAfterSetup
     view
     returns (uint256)
     {
@@ -227,8 +227,8 @@ contract StakingContract is Pausable, ReentrancyGuard {
     }
 
     function currentReward(address account)
-    onlyAfterSetup
     external
+    onlyAfterSetup
     view
     returns (uint256, uint256)
     {
@@ -238,8 +238,8 @@ contract StakingContract is Pausable, ReentrancyGuard {
     }
 
     function getStakeDeposit()
-    onlyAfterSetup
     external
+    onlyAfterSetup
     view
     returns (uint256, uint256, uint256, uint256, uint256)
     {
@@ -250,8 +250,8 @@ contract StakingContract is Pausable, ReentrancyGuard {
     }
 
     function baseRewardsLength()
-    onlyAfterSetup
     external
+    onlyAfterSetup
     view
     returns (uint256)
     {
@@ -259,8 +259,8 @@ contract StakingContract is Pausable, ReentrancyGuard {
     }
 
     function baseReward(uint256 index)
-    onlyAfterSetup
     external
+    onlyAfterSetup
     view
     returns (uint256, uint256, uint256)
     {
@@ -278,8 +278,8 @@ contract StakingContract is Pausable, ReentrancyGuard {
     }
 
     function baseRewardCheckpoint(uint256 index)
-    onlyAfterSetup
     external
+    onlyAfterSetup
     view
     returns (uint256, uint256, uint256, uint256)
     {
@@ -290,13 +290,13 @@ contract StakingContract is Pausable, ReentrancyGuard {
 
     // OWNER SETUP
     function setupStakingLimit(uint256 maxAmount, uint256 initialAmount, uint256 daysInterval, uint256 unstakingPeriod)
+    external
     onlyOwner
     whenPaused
     onlyDuringSetup
-    external
     {
-        require(maxAmount > 0 && initialAmount > 0 && daysInterval > 0 && unstakingPeriod >= 0, '[Validation] Some parameters are 0');
-        require(maxAmount.mod(initialAmount) == 0, '[Validation] maxAmount should be a multiple of initialAmount');
+        require(maxAmount > 0 && initialAmount > 0 && daysInterval > 0 && unstakingPeriod >= 0, "[Validation] Some parameters are 0");
+        require(maxAmount.mod(initialAmount) == 0, "[Validation] maxAmount should be a multiple of initialAmount");
 
         uint256 maxIntervals = maxAmount.div(initialAmount);
         // set the staking limits
@@ -316,10 +316,10 @@ contract StakingContract is Pausable, ReentrancyGuard {
         uint256[] calldata lowerBounds,
         uint256[] calldata upperBounds
     )
+    external
     onlyOwner
     whenPaused
     onlyDuringSetup
-    external
     {
         _validateSetupRewardsParameters(multiplier, anualRewardRates, lowerBounds, upperBounds);
 
@@ -443,7 +443,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
     function _initBaseRewardHistory()
     private
     {
-        require(baseRewardHistory.length == 0, '[Logical] Base reward history has already been initialized');
+        require(baseRewardHistory.length == 0, "[Logical] Base reward history has already been initialized");
 
         baseRewardHistory.push(BaseRewardCheckpoint(0, now, 0, block.number));
     }
@@ -485,7 +485,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
     returns (BaseReward memory)
     {
         // search for the current base reward from current total staked amount
-        uint256 currentBaseRewardIndex = (_lastBaseRewardCheckpoint()).baseRewardIndex;
+        uint256 currentBaseRewardIndex = _lastBaseRewardCheckpoint().baseRewardIndex;
 
         return rewardConfig.baseRewards[currentBaseRewardIndex];
     }
@@ -528,15 +528,18 @@ contract StakingContract is Pausable, ReentrancyGuard {
     private
     pure
     {
-        require(anualRewardRates.length > 0 && lowerBounds.length > 0 && upperBounds.length > 0,
-            '[Validation] All parameters must have at least one element'
+        require(
+            anualRewardRates.length > 0 && lowerBounds.length > 0 && upperBounds.length > 0,
+            "[Validation] All parameters must have at least one element"
         );
-        require(anualRewardRates.length == lowerBounds.length && lowerBounds.length == upperBounds.length,
-            '[Validation] All parameters must have the same number of elements'
+        require(
+            anualRewardRates.length == lowerBounds.length && lowerBounds.length == upperBounds.length,
+            "[Validation] All parameters must have the same number of elements"
         );
-        require(lowerBounds[0] == 0, '[Validation] First lower bound should be 0');
-        require((multiplier < 100) && (uint256(100).mod(multiplier) == 0),
-            '[Validation] Multiplier should be smaller than 100 and divide it equally'
+        require(lowerBounds[0] == 0, "[Validation] First lower bound should be 0");
+        require(
+            (multiplier < 100) && (uint256(100).mod(multiplier) == 0),
+            "[Validation] Multiplier should be smaller than 100 and divide it equally"
         );
     }
 }
