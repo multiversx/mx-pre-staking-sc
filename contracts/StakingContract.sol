@@ -77,7 +77,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
     uint256 public currentTotalStake;
 
     mapping(address => StakeDeposit) private _stakeDeposits;
-    BaseRewardCheckpoint[] private baseRewardHistory;
+    BaseRewardCheckpoint[] private _baseRewardHistory;
 
     // MODIFIERS
     modifier guardMaxStakingLimit(uint256 amount)
@@ -139,7 +139,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
         StakeDeposit storage stakeDeposit = _stakeDeposits[msg.sender];
         stakeDeposit.amount = stakeDeposit.amount.add(amount);
         stakeDeposit.startDate = now;
-        stakeDeposit.startCheckpointIndex = baseRewardHistory.length - 1;
+        stakeDeposit.startCheckpointIndex = _baseRewardHistory.length - 1;
         stakeDeposit.exists = true;
 
         currentTotalStake = currentTotalStake.add(amount);
@@ -161,7 +161,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
         require(stakeDeposit.endDate == 0, "[Initiate Withdrawal] You already initiated the withdrawal");
 
         stakeDeposit.endDate = now;
-        stakeDeposit.endCheckpointIndex = baseRewardHistory.length - 1;
+        stakeDeposit.endCheckpointIndex = _baseRewardHistory.length - 1;
         emit WithdrawInitiated(msg.sender, stakeDeposit.amount);
     }
 
@@ -274,16 +274,16 @@ contract StakingContract is Pausable, ReentrancyGuard {
     view
     returns (uint256)
     {
-        return baseRewardHistory.length;
+        return _baseRewardHistory.length;
     }
 
-    function baseRewardCheckpoint(uint256 index)
+    function baseRewardHistory(uint256 index)
     external
     onlyAfterSetup
     view
     returns (uint256, uint256, uint256, uint256)
     {
-        BaseRewardCheckpoint memory c = baseRewardHistory[index];
+        BaseRewardCheckpoint memory c = _baseRewardHistory[index];
 
         return (c.baseRewardIndex, c.startTimestamp, c.endTimestamp, c.fromBlock);
     }
@@ -416,20 +416,20 @@ contract StakingContract is Pausable, ReentrancyGuard {
         // Computing the first segment base reward
         // User could deposit in the middle of the segment so we need to get the segment from which the user deposited
         // to the moment the base reward changes
-        weight = (baseRewardHistory[stakeDeposit.startCheckpointIndex].endTimestamp - stakeDeposit.startDate) / 1 days;
+        weight = (_baseRewardHistory[stakeDeposit.startCheckpointIndex].endTimestamp - stakeDeposit.startDate) / 1 days;
         rate = _baseRewardFromHistoryIndex(stakeDeposit.startCheckpointIndex).anualRewardRate;
         uint256 weightedSum = rate.mul(weight);
 
         // Starting from the second checkpoint because the first one is already computed
         for (uint256 i = stakeDeposit.startCheckpointIndex + 1; i < stakeDeposit.endCheckpointIndex; i++) {
-            weight = (baseRewardHistory[i].endTimestamp - baseRewardHistory[i].startTimestamp) / 1 days;
+            weight = (_baseRewardHistory[i].endTimestamp - _baseRewardHistory[i].startTimestamp) / 1 days;
             rate = _baseRewardFromHistoryIndex(i).anualRewardRate;
             weightedSum = weightedSum.add(rate.mul(weight));
         }
 
         // Computing the base reward for the last segment
         // days between start timestamp of the last checkpoint to the moment he initialized the withdrawal
-        weight = (stakeDeposit.endDate - baseRewardHistory[stakeDeposit.endCheckpointIndex].startTimestamp) / 1 days;
+        weight = (stakeDeposit.endDate - _baseRewardHistory[stakeDeposit.endCheckpointIndex].startTimestamp) / 1 days;
         rate = _baseRewardFromHistoryIndex(stakeDeposit.endCheckpointIndex).anualRewardRate;
         weightedSum = weightedSum.add(weight.mul(rate));
 
@@ -446,9 +446,9 @@ contract StakingContract is Pausable, ReentrancyGuard {
     function _initBaseRewardHistory()
     private
     {
-        require(baseRewardHistory.length == 0, "[Logical] Base reward history has already been initialized");
+        require(_baseRewardHistory.length == 0, "[Logical] Base reward history has already been initialized");
 
-        baseRewardHistory.push(BaseRewardCheckpoint(0, now, 0, block.number));
+        _baseRewardHistory.push(BaseRewardCheckpoint(0, now, 0, block.number));
     }
 
     function _updateBaseRewardHistory()
@@ -476,7 +476,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
 
         if (oldCheckPoint.fromBlock < block.number) {
             oldCheckPoint.endTimestamp = now;
-            baseRewardHistory.push(BaseRewardCheckpoint(newIndex, now, 0, block.number));
+            _baseRewardHistory.push(BaseRewardCheckpoint(newIndex, now, 0, block.number));
         } else {
             oldCheckPoint.baseRewardIndex = newIndex;
         }
@@ -498,7 +498,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
     view
     returns (BaseReward memory)
     {
-        return rewardConfig.baseRewards[baseRewardHistory[index].baseRewardIndex];
+        return rewardConfig.baseRewards[_baseRewardHistory[index].baseRewardIndex];
     }
 
     function _lastBaseRewardCheckpoint()
@@ -506,7 +506,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
     view
     returns (BaseRewardCheckpoint storage)
     {
-        return baseRewardHistory[baseRewardHistory.length - 1];
+        return _baseRewardHistory[_baseRewardHistory.length - 1];
     }
 
     function _computeCurrentBaseReward()
