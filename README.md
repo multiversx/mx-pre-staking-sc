@@ -143,3 +143,18 @@ Glossary:
 - Weighted sum: each (Annual reward rate * Number of days staking period) added together for all periods of staking.
 - Weighted average: Weighted sum / Staking period
 
+# Certification
+
+The staking contract has been thouroughly tested and reviewed by .... and .... .
+
+Full audit report: 
+- [insert link]
+- [insert link]
+
+# Deployed Contract
+
+The current version of the contract has been deployed on the Ethereum mainnet and can be found under this address: [insert link]. As a consequence all staking actions and withdrawals will be publicly observable and fully verifiable. If the contract address displayed during staking or withdrawals should ever deviate from this address it is a sign of the website being either fake or compromised. In that case DO NOT INTERACT WITH THE WEBSITE.
+
+# Bug Reporting
+
+Please contact us at bugbounty@elrond.com if you find something you believe we should know about.
