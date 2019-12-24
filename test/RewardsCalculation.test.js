@@ -2,7 +2,6 @@
 const {expect} = require('chai');
 const {expectEvent, time, ether} = require('@openzeppelin/test-helpers');
 const {BigNumber, getEventProperty} = require('./helper');
-const { fromWei } = require('web3-utils');
 
 // CONTRACTS
 const StakingContract = artifacts.require('StakingContract');
@@ -20,7 +19,7 @@ const depositThreshold = ether(BigNumber(1.25e+9));
 const rewardsAmount = ether(BigNumber(400e+6));
 const stakingConfig = {
     maxAmount: ether(BigNumber(5e+9)),
-    initialAmount: ether(BigNumber(5e+8)),
+    initialAmount: ether(BigNumber(500e+6)),
     daysInterval: BigNumber(3),
     unstakingPeriod: BigNumber(7),
     maxIntervals: BigNumber(10),
