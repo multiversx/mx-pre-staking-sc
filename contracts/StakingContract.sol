@@ -218,7 +218,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
 
     // VIEW FUNCTIONS FOR HELPING THE USER AND CLIENT INTERFACE
     function currentStakingLimit()
-    public
+    external
     onlyAfterSetup
     view
     returns (uint256)
