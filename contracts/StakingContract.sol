@@ -359,10 +359,12 @@ contract StakingContract is Pausable, ReentrancyGuard {
     returns (uint256)
     {
         uint256 intervalsPassed = _getIntervalsPassed();
-        intervalsPassed = intervalsPassed == 0 ? 1 : intervalsPassed;
+        uint256 baseStakingLimit = stakingLimitConfig.initialAmount;
+
+        uint256 intervals = intervalsPassed.min(stakingLimitConfig.maxIntervals - 1);
 
         // initialLimit * ((now - launchMoment) / interval)
-        return stakingLimitConfig.initialAmount.mul(intervalsPassed.min(stakingLimitConfig.maxIntervals));
+        return baseStakingLimit.add(baseStakingLimit.mul(intervals));
     }
 
     function _getIntervalsPassed()
@@ -370,7 +372,8 @@ contract StakingContract is Pausable, ReentrancyGuard {
     view
     returns (uint256)
     {
-        return ((now - launchTimestamp) / stakingLimitConfig.daysInterval) / 1 days;
+        uint256 daysPassed = (now - launchTimestamp) / 1 days;
+        return daysPassed / stakingLimitConfig.daysInterval;
     }
 
     function _computeReward(StakeDeposit memory stakeDeposit)

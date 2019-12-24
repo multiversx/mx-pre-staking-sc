@@ -2,7 +2,7 @@
 const {expect} = require('chai');
 const _ = require('lodash');
 
-const {expectEvent, expectRevert, constants, time, balance} = require('@openzeppelin/test-helpers');
+const {expectEvent, expectRevert, constants, time, ether} = require('@openzeppelin/test-helpers');
 const {BigNumber, expectInvalidArgument, getEventProperty} = require('./helper');
 
 // CONTRACTS
@@ -16,11 +16,11 @@ const Status = {
     RewardsDisabled: 2,
 };
 
-const depositAmount = BigNumber(1e+6);
-const rewardsAmount = BigNumber(400e+6);
+const depositAmount = ether(BigNumber(1e+6));
+const rewardsAmount = ether(BigNumber(400e+6));
 const stakingConfig = {
-    maxAmount: BigNumber(5e+9),
-    initialAmount: BigNumber(5e+8),
+    maxAmount: ether(BigNumber(5e+9)),
+    initialAmount: ether(BigNumber(5e+8)),
     daysInterval: BigNumber(3),
     unstakingPeriod: BigNumber(7),
     maxIntervals: BigNumber(10),
@@ -30,24 +30,24 @@ const rewardsConfig = {
     multiplier: BigNumber(5),
     rewardRates: [
         {
-            anualRewardRate: BigNumber(16),
+            anualRewardRate: BigNumber(17),
             lowerBound: BigNumber(0),
-            upperBound: BigNumber(1.25e+9),
+            upperBound: ether(BigNumber(1.25e+9)),
         },
         {
-            anualRewardRate: BigNumber(18),
-            lowerBound: BigNumber(1.25e+9),
-            upperBound: BigNumber(2.5e+9),
+            anualRewardRate: BigNumber(19),
+            lowerBound: ether(BigNumber(1.25e+9)),
+            upperBound: ether(BigNumber(2.5e+9)),
         },
         {
             anualRewardRate: BigNumber(21),
-            lowerBound: BigNumber(2.5e+9),
-            upperBound: BigNumber(3.75e+9),
+            lowerBound: ether(BigNumber(2.5e+9)),
+            upperBound: ether(BigNumber(3.75e+9)),
         },
         {
             anualRewardRate: BigNumber(23),
-            lowerBound: BigNumber(3.75e+9),
-            upperBound: BigNumber(5e+9),
+            lowerBound: ether(BigNumber(3.75e+9)),
+            upperBound: ether(BigNumber(5e+9)),
         },
     ]
 };
@@ -329,11 +329,12 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
             actualRewardsConfig = actualRewardsConfig.map(transformRewardToString);
             let expectedRewardsConfig = rewardsConfig.rewardRates.map(transformRewardToString);
 
+            const zeroRewardLowerBound = ether(BigNumber(5e+9));
             // Adding the 0 annual reward rate
             expectedRewardsConfig.push(        {
                     anualRewardRate: '0',
-                    lowerBound: BigNumber(5e+9).toString(),
-                    upperBound: BigNumber(5e+9).add(BigNumber(10)).toString(),
+                    lowerBound: zeroRewardLowerBound.toString(),
+                    upperBound: zeroRewardLowerBound.add(BigNumber(10)).toString(),
                 }
             );
 
@@ -511,7 +512,7 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
         it('4.20. executeWithdrawal: should revert if transfer fails on reward', async function () {
             const revertMessage = "ERC20: transfer amount exceeds allowance";
 
-            await time.increase(time.duration.days(stakingConfig.unstakingPeriod.add(BigNumber(1))));
+            await time.increase(time.duration.days(stakingConfig.unstakingPeriod));
 
             await this.token.decreaseAllowance(
                 this.stakingContract.address,
@@ -522,16 +523,23 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
             await expectRevert(this.stakingContract.executeWithdrawal(from(account1)), revertMessage);
         });
 
-        it('4.21. executeWithdrawal: should transfer the initial staking deposit and the correct reward and emit WithdrawExecuted(msg.sender, amount, reward)', async function () {
+        it('4.21. executeWithdrawal: should transfer the initial staking deposit and the correct reward and emit WithdrawExecuted', async function () {
+            await this.token.increaseAllowance(
+                this.stakingContract.address,
+                rewardsAmount.sub(BigNumber(123)),
+                from(rewardsAddress)
+            );
+            const initialTotalStake = await this.stakingContract.currentTotalStake();
+            const {logs}  = await this.stakingContract.executeWithdrawal(from(account1));
+            const currentTotalStake = await this.stakingContract.currentTotalStake();
 
-        });
+            const eventData = {
+                account: account1,
+                amount: depositAmount,
+            };
 
-        it('4.22. executeWithdrawal: should update the current total stake', async function () {
-
-        });
-
-        it('4.23. executeWithdrawal: should update the base reward history according to the new currentTotalStake', async function () {
-
+            expectEvent.inLogs(logs, 'WithdrawExecuted', eventData);
+            expect(currentTotalStake).to.be.bignumber.equal(initialTotalStake.sub(depositAmount));
         });
     });
 
@@ -570,6 +578,7 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
         it("should reduce the reward to half if rewards are disabled for 15 out of 30 days", async function () {
             // Account 1
             await this.stakingContract.deposit(depositAmount, from(account1));
+
             await time.increase(time.duration.days(15));
             await this.stakingContract.toggleRewards(false);
             await time.increase(time.duration.days(15));
@@ -594,16 +603,17 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
 
     describe('6. Staking limit waves', async function () {
         before(async function () {
+            this.bigDepositAmount = ether(BigNumber(2e+9));
             this.token = await Token.new('ElrondToken', 'ERD', BigNumber(18));
             this.stakingContract = await StakingContract.new(this.token.address, rewardsAddress);
             await this.token.mint(rewardsAddress, rewardsAmount);
-            await this.token.mint(account1, depositAmount);
-            await this.token.mint(account2, depositAmount);
-            await this.token.mint(account3, depositAmount);
+            await this.token.mint(account1, this.bigDepositAmount);
+            await this.token.mint(account2, this.bigDepositAmount);
+            await this.token.mint(account3, this.bigDepositAmount);
 
-            await this.token.approve(this.stakingContract.address, depositAmount, from(account1));
-            await this.token.approve(this.stakingContract.address, depositAmount, from(account2));
-            await this.token.approve(this.stakingContract.address, depositAmount, from(account3));
+            await this.token.approve(this.stakingContract.address, this.bigDepositAmount, from(account1));
+            await this.token.approve(this.stakingContract.address, this.bigDepositAmount, from(account2));
+            await this.token.approve(this.stakingContract.address, this.bigDepositAmount, from(account3));
 
             await this.stakingContract.setupStakingLimit(
                 stakingConfig.maxAmount, stakingConfig.initialAmount, stakingConfig.daysInterval, stakingConfig.unstakingPeriod
@@ -614,28 +624,34 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
                 lowerBounds,
                 upperBounds
             );
+            await this.stakingContract.unpause();
         });
 
-        it('5.3. should not advance the wave earlier', async function () {
-
+        it('5.2. should not advance the wave earlier', async function () {
+            await time.increase(time.duration.days(2));
+            await expectRevert(this.stakingContract.deposit(this.bigDepositAmount, from(account1)),
+                "[Deposit] Your deposit would exceed the current staking limit"
+            );
+            const currentStakingLimit = await this.stakingContract.currentStakingLimit();
+            expect(currentStakingLimit).to.be.bignumber.equal(ether(BigNumber(500e+6)));
         });
 
-        it('5.2. should advance the staking limit to the second wave (1 Billion', async function () {
-
-        });
-    });
-
-    describe('6. Base reward changes', async function () {
-
-    });
-
-    describe('7. View functions', async function () {
-        it('getCurrentStakingLimit: should ', async function () {
-
+        it('5.3. should advance the staking limit to the second wave (1 Billion)', async function () {
+            await time.increase(time.duration.days(1));
+            const currentStakingLimit = await this.stakingContract.currentStakingLimit();
+            expect(currentStakingLimit).to.be.bignumber.equal(ether(BigNumber(1e+9)));
         });
 
-        it('getCurrentReward: should ', async function () {
+        it('5.4. should advance the stakingLimit to the second wave (1.5 Billion) ', async function () {
+            await time.increase(time.duration.days(3));
+            const currentStakingLimit = await this.stakingContract.currentStakingLimit();
+            expect(currentStakingLimit).to.be.bignumber.equal(ether(BigNumber(1.5e+9)));
+        });
 
+        it('5.5. should advance the staking limit to the maximum amount and not more', async function () {
+            await time.increase(time.duration.days(33));
+            const currentStakingLimit = await this.stakingContract.currentStakingLimit();
+            expect(currentStakingLimit).to.be.bignumber.equal(ether(BigNumber(5e+9)));
         });
     });
 });

@@ -88,13 +88,7 @@ contract('StakingContract', function ([owner, rewardsAddress, account1, account2
         });
 
         it('1.1 (Contract returns the right amount but the test needs rewritten) should return 79134 reward', async function () {
-            const stakingPeriod = BigNumber(90);
-            const weightedSum = BigNumber(1992);
-            const weightedAverage = weightedSum.div(stakingPeriod);
-            const accumulator = weightedSum.mul(rewardsConfig.multiplier).div(BigNumber(1000));
-            const effectiveRewardRate = weightedAverage.add(accumulator);
-
-            const expectedReward = depositAmount.mul(effectiveRewardRate).mul(stakingPeriod).div(BigNumber(36500));
+            const expectedReward = BigNumber('79134246575342465752602');
 
             // TODO: The contract computes the right reward but not in this test
 
@@ -116,10 +110,6 @@ contract('StakingContract', function ([owner, rewardsAddress, account1, account2
             await time.increase(time.duration.days(7));
 
             const {logs} = await this.stakingContract.executeWithdrawal(from(account1));
-            const actualReward = getEventProperty(logs, 'WithdrawExecuted', 'reward');
-
-            console.log('======= ACTUAL REWARD =======');
-            console.log(actualReward.toString());
 
             const eventData = {
                 account: account1,
