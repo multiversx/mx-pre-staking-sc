@@ -87,10 +87,9 @@ contract('StakingContract', function ([owner, rewardsAddress, account1, account2
             await this.stakingContract.unpause();
         });
 
-        it('1.1 (Contract returns the right amount but the test needs rewritten) should return 79134 reward', async function () {
+        it('1.1 should return 79134 reward', async function () {
             const expectedReward = BigNumber('79134246575342465752602');
-
-            // TODO: The contract computes the right reward but not in this test
+            // Computed via the spreadsheet
 
             await time.increase(time.duration.days(30));
             await this.stakingContract.deposit(depositAmount, from(account1));

@@ -523,7 +523,20 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
             await expectRevert(this.stakingContract.executeWithdrawal(from(account1)), revertMessage);
         });
 
-        it('4.21. executeWithdrawal: should transfer the initial staking deposit and the correct reward and emit WithdrawExecuted', async function () {
+        it('4.21. currentReward(): should return the stake deposit and current reward for a specified account', async function () {
+            const currentReward = await this.stakingContract.currentReward(account1);
+
+            expect(currentReward[0]).to.be.bignumber.equal(depositAmount);
+            expect(currentReward[1]).to.be.bignumber.above(BigNumber(0));
+        });
+
+        it('4.22. getStakeDeposit(): should return the current the stake deposit for the msg.sender', async function () {
+            const stakeDeposit = await this.stakingContract.getStakeDeposit(from(account1));
+
+            expect(stakeDeposit[0]).to.be.bignumber.equal(depositAmount);
+        });
+
+        it('4.22. executeWithdrawal: should transfer the initial staking deposit and the correct reward and emit WithdrawExecuted', async function () {
             await this.token.increaseAllowance(
                 this.stakingContract.address,
                 rewardsAmount.sub(BigNumber(123)),
