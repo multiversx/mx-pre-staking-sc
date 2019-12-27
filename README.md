@@ -48,7 +48,7 @@ In addition to the above shared incentive between all who are pre-staking, we al
 bonus for each amount stake, a 0.5% increase to the rewards rate for each full day the amount stake is not withdrawn, 
 whatever the reward rate will be for each day, 17%, 19%, 21% or 23%. So for example if on day one the reward rate is 
 17% on the next day will be increased with 0.085% and on the next day with an additional 0.085% and so on. An online calculator
-is avilable here: https://docs.google.com/spreadsheets/d/1aE0DzDU4HgA3TVWRJxvsEKlOEdn57KkBEADbx2DZaaA/edit#gid=42242207
+is available here: https://docs.google.com/spreadsheets/d/1aE0DzDU4HgA3TVWRJxvsEKlOEdn57KkBEADbx2DZaaA/edit#gid=42242207
 
 We are expecting the Smart Contract to calculate and have rewards enabled for around 3 months. However, there will be a
 maximum of rewards the SC will support, 400 Million ERD.
