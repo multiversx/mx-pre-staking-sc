@@ -1,4 +1,4 @@
-pragma solidity ^0.5.14;
+pragma solidity 0.5.15;
 
 import "./libs/math/SafeMath.sol";
 import "./libs/math/Math.sol";
