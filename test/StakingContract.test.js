@@ -22,7 +22,7 @@ const stakingConfig = {
     maxAmount: ether(BigNumber(5e+9)),
     initialAmount: ether(BigNumber(5e+8)),
     daysInterval: BigNumber(3),
-    unstakingPeriod: BigNumber(7),
+    daysUnstakingPeriod: BigNumber(7),
     maxIntervals: BigNumber(10),
 };
 
@@ -51,7 +51,7 @@ const rewardsConfig = {
         },
     ]
 };
-const anualRewardRates = rewardsConfig.rewardRates.map(rewardRate => rewardRate.anualRewardRate.toString());
+const annualRewardRates = rewardsConfig.rewardRates.map(rewardRate => rewardRate.anualRewardRate.toString());
 const lowerBounds = rewardsConfig.rewardRates.map(rewardRate => rewardRate.lowerBound.toString());
 const upperBounds = rewardsConfig.rewardRates.map(rewardRate => rewardRate.upperBound.toString());
 const transformRewardToString = element => {
@@ -123,22 +123,22 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
         });
 
         it('3.1. setupStakingLimit: should throw if called with wrong argument types', async function () {
-            // uint256 maxAmount, uint256 initialAmount, uint256 daysInterval, uint256 unstakingPeriod
+            // uint256 maxAmount, uint256 initialAmount, uint256 daysInterval, uint256 daysUnstakingPeriod
             await expectInvalidArgument.uint256(
                 this.stakingContract.setupStakingLimit(
-                    null, stakingConfig.initialAmount, stakingConfig.daysInterval, stakingConfig.unstakingPeriod
+                    null, stakingConfig.initialAmount, stakingConfig.daysInterval, stakingConfig.daysUnstakingPeriod
                 ),
                 'maxAmount'
             );
             await expectInvalidArgument.uint256(
                 this.stakingContract.setupStakingLimit(
-                    stakingConfig.maxAmount, null, stakingConfig.daysInterval, stakingConfig.unstakingPeriod
+                    stakingConfig.maxAmount, null, stakingConfig.daysInterval, stakingConfig.daysUnstakingPeriod
                 ),
                 'initialAmount'
             );
             await expectInvalidArgument.uint256(
                 this.stakingContract.setupStakingLimit(
-                    stakingConfig.maxAmount, stakingConfig.initialAmount, null, stakingConfig.unstakingPeriod
+                    stakingConfig.maxAmount, stakingConfig.initialAmount, null, stakingConfig.daysUnstakingPeriod
                 ),
                 'daysInterval'
             );
@@ -146,7 +146,7 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
                 this.stakingContract.setupStakingLimit(
                     stakingConfig.maxAmount, stakingConfig.initialAmount, stakingConfig.daysInterval, null
                 ),
-                'unstakingPeriod'
+                'daysUnstakingPeriod'
             );
         });
 
@@ -154,7 +154,7 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
             const revertMessage = "Ownable: caller is not the owner";
             await expectRevert(
                 this.stakingContract.setupStakingLimit(
-                    stakingConfig.maxAmount, stakingConfig.initialAmount, stakingConfig.daysInterval, stakingConfig.unstakingPeriod,
+                    stakingConfig.maxAmount, stakingConfig.initialAmount, stakingConfig.daysInterval, stakingConfig.daysUnstakingPeriod,
                     from(unauthorized)
                 ),
                 revertMessage
@@ -166,7 +166,7 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
             const revertMessage = "Pausable: not paused";
             await expectRevert(
                 this.stakingContract.setupStakingLimit(
-                    stakingConfig.maxAmount, stakingConfig.initialAmount, stakingConfig.daysInterval, stakingConfig.unstakingPeriod
+                    stakingConfig.maxAmount, stakingConfig.initialAmount, stakingConfig.daysInterval, stakingConfig.daysUnstakingPeriod
                 ),
                 revertMessage
             );
@@ -177,13 +177,13 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
             const revertMessage = '[Validation] maxAmount should be a multiple of initialAmount';
             await expectRevert(
                 this.stakingContract.setupStakingLimit(
-                    BigNumber(231e+3), stakingConfig.initialAmount, stakingConfig.daysInterval, stakingConfig.unstakingPeriod
+                    BigNumber(231e+3), stakingConfig.initialAmount, stakingConfig.daysInterval, stakingConfig.daysUnstakingPeriod
                 ),
                 revertMessage
             );
             await expectRevert(
                 this.stakingContract.setupStakingLimit(
-                    BigNumber(7e+8), stakingConfig.initialAmount, stakingConfig.daysInterval, stakingConfig.unstakingPeriod
+                    BigNumber(7e+8), stakingConfig.initialAmount, stakingConfig.daysInterval, stakingConfig.daysUnstakingPeriod
                 ),
                 revertMessage
             );
@@ -193,7 +193,7 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
             const revertMessage = '[Validation] Some parameters are 0';
             await expectRevert(
                 this.stakingContract.setupStakingLimit(
-                    stakingConfig.maxAmount, stakingConfig.initialAmount, BigNumber(0), stakingConfig.unstakingPeriod
+                    stakingConfig.maxAmount, stakingConfig.initialAmount, BigNumber(0), stakingConfig.daysUnstakingPeriod
                 ),
                 revertMessage
             );
@@ -201,7 +201,7 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
 
         it('3.6. setupStakingLimit: should setup the staking limit correctly', async function () {
             await this.stakingContract.setupStakingLimit(
-                stakingConfig.maxAmount, stakingConfig.initialAmount, stakingConfig.daysInterval, stakingConfig.unstakingPeriod
+                stakingConfig.maxAmount, stakingConfig.initialAmount, stakingConfig.daysInterval, stakingConfig.daysUnstakingPeriod
             );
             let actualStakingConfig = await this.stakingContract.stakingLimitConfig();
 
@@ -217,11 +217,11 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
                 maxAmount: BigNumber(1e+10),
                 initialAmount: BigNumber(1e+9),
                 daysInterval: BigNumber(3),
-                unstakingPeriod: BigNumber(4),
+                daysUnstakingPeriod: BigNumber(4),
                 maxIntervals: BigNumber(10),
             };
             await this.stakingContract.setupStakingLimit(
-                newConfig.maxAmount, newConfig.initialAmount, newConfig.daysInterval, newConfig.unstakingPeriod
+                newConfig.maxAmount, newConfig.initialAmount, newConfig.daysInterval, newConfig.daysUnstakingPeriod
             );
             let actualStakingConfig = await this.stakingContract.stakingLimitConfig();
 
@@ -236,7 +236,7 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
             const revertMessage = "Ownable: caller is not the owner";
             await expectRevert(
                 this.stakingContract.setupRewards(
-                    rewardsConfig.multiplier, anualRewardRates, lowerBounds, upperBounds,
+                    rewardsConfig.multiplier, annualRewardRates, lowerBounds, upperBounds,
                     from(unauthorized)
                 ),
                 revertMessage
@@ -248,7 +248,7 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
             const revertMessage = "Pausable: not paused";
             await expectRevert(
                 this.stakingContract.setupRewards(
-                    rewardsConfig.multiplier, anualRewardRates, lowerBounds, upperBounds
+                    rewardsConfig.multiplier, annualRewardRates, lowerBounds, upperBounds
                 ),
                 revertMessage
             );
@@ -258,7 +258,7 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
         it('3.10. setupRewards: should throw if called with wrong argument types', async function () {
             await expectInvalidArgument.uint256(
                 this.stakingContract.setupRewards(
-                    'not a number', anualRewardRates, lowerBounds, upperBounds
+                    'not a number', annualRewardRates, lowerBounds, upperBounds
                 ),
                 'multiplier'
             );
@@ -266,7 +266,7 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
                 this.stakingContract.setupRewards(
                     rewardsConfig.multiplier, 'not an array', lowerBounds, upperBounds
                 ),
-                'anualRewardRates'
+                'annualRewardRates'
             );
         });
 
@@ -286,19 +286,19 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
             );
             await expectRevert(
                 this.stakingContract.setupRewards(
-                    rewardsConfig.multiplier, anualRewardRates, _.slice(lowerBounds, 1), upperBounds
+                    rewardsConfig.multiplier, annualRewardRates, _.slice(lowerBounds, 1), upperBounds
                 ),
                 message2
             );
             await expectRevert(
                 this.stakingContract.setupRewards(
-                    rewardsConfig.multiplier, anualRewardRates, wrongLowerBounds, upperBounds
+                    rewardsConfig.multiplier, annualRewardRates, wrongLowerBounds, upperBounds
                 ),
                 message3
             );
             await expectRevert(
                 this.stakingContract.setupRewards(
-                    BigNumber(123), anualRewardRates, lowerBounds, upperBounds
+                    BigNumber(123), annualRewardRates, lowerBounds, upperBounds
                 ),
                 message4
             );
@@ -307,7 +307,7 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
         it('3.12. setupRewards: should setup the rewards with correct param values and number', async function () {
             await this.stakingContract.setupRewards(
                 rewardsConfig.multiplier,
-                anualRewardRates,
+                annualRewardRates,
                 lowerBounds,
                 upperBounds
             );
@@ -355,7 +355,7 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
             const revertMessage = '[Lifecycle] Setup is already done';
             await expectRevert(this.stakingContract.setupRewards(
                 rewardsConfig.multiplier,
-                anualRewardRates,
+                annualRewardRates,
                 lowerBounds,
                 upperBounds
             ), revertMessage)
@@ -379,11 +379,11 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
 
         it('4.2. deposit: should throw if called with wrong argument types', async function () {
             await this.stakingContract.setupStakingLimit(
-                stakingConfig.maxAmount, stakingConfig.initialAmount, stakingConfig.daysInterval, stakingConfig.unstakingPeriod
+                stakingConfig.maxAmount, stakingConfig.initialAmount, stakingConfig.daysInterval, stakingConfig.daysUnstakingPeriod
             );
             await this.stakingContract.setupRewards(
                 rewardsConfig.multiplier,
-                anualRewardRates,
+                annualRewardRates,
                 lowerBounds,
                 upperBounds
             );
@@ -512,7 +512,7 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
         it('4.20. executeWithdrawal: should revert if transfer fails on reward', async function () {
             const revertMessage = "ERC20: transfer amount exceeds allowance";
 
-            await time.increase(time.duration.days(stakingConfig.unstakingPeriod));
+            await time.increase(time.duration.days(stakingConfig.daysUnstakingPeriod));
 
             await this.token.decreaseAllowance(
                 this.stakingContract.address,
@@ -572,11 +572,11 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
 
             // setup staking contract
             await this.stakingContract.setupStakingLimit(
-                stakingConfig.maxAmount, stakingConfig.initialAmount, stakingConfig.daysInterval, stakingConfig.unstakingPeriod
+                stakingConfig.maxAmount, stakingConfig.initialAmount, stakingConfig.daysInterval, stakingConfig.daysUnstakingPeriod
             );
             await this.stakingContract.setupRewards(
                 rewardsConfig.multiplier,
-                anualRewardRates,
+                annualRewardRates,
                 lowerBounds,
                 upperBounds
             );
@@ -629,11 +629,11 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
             await this.token.approve(this.stakingContract.address, this.bigDepositAmount, from(account3));
 
             await this.stakingContract.setupStakingLimit(
-                stakingConfig.maxAmount, stakingConfig.initialAmount, stakingConfig.daysInterval, stakingConfig.unstakingPeriod
+                stakingConfig.maxAmount, stakingConfig.initialAmount, stakingConfig.daysInterval, stakingConfig.daysUnstakingPeriod
             );
             await this.stakingContract.setupRewards(
                 rewardsConfig.multiplier,
-                anualRewardRates,
+                annualRewardRates,
                 lowerBounds,
                 upperBounds
             );
