@@ -331,7 +331,8 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
 
             const zeroRewardLowerBound = ether(BigNumber(5e+9));
             // Adding the 0 annual reward rate
-            expectedRewardsConfig.push(        {
+            expectedRewardsConfig.push(
+                {
                     anualRewardRate: '0',
                     lowerBound: zeroRewardLowerBound.toString(),
                     upperBound: zeroRewardLowerBound.add(BigNumber(10)).toString(),
@@ -543,7 +544,7 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
                 from(rewardsAddress)
             );
             const initialTotalStake = await this.stakingContract.currentTotalStake();
-            const {logs}  = await this.stakingContract.executeWithdrawal(from(account1));
+            const {logs} = await this.stakingContract.executeWithdrawal(from(account1));
             const currentTotalStake = await this.stakingContract.currentTotalStake();
 
             const eventData = {
@@ -711,5 +712,45 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
             expect(actualReward.toString()).to.equal(expectedReward);
         });
 
+    });
+
+    describe('8. Deposit after executing withdrawal', async function () {
+        before(async function () {
+            this.token = await Token.new('ElrondToken', 'ERD', BigNumber(18));
+            this.stakingContract = await StakingContract.new(this.token.address, rewardsAddress);
+            await this.token.mint(rewardsAddress, rewardsAmount);
+            await this.token.mint(account1, depositAmount);
+            // allow staking contract
+            await this.token.approve(this.stakingContract.address, rewardsAmount, from(rewardsAddress));
+            await this.token.approve(this.stakingContract.address, depositAmount, from(account1));
+
+            // setup staking contract
+            await this.stakingContract.setupStakingLimit(
+                stakingConfig.maxAmount, stakingConfig.initialAmount, stakingConfig.daysInterval, stakingConfig.unstakingPeriod
+            );
+            await this.stakingContract.setupRewards(
+                rewardsConfig.multiplier,
+                anualRewardRates,
+                lowerBounds,
+                upperBounds
+            );
+            await this.stakingContract.unpause();
+
+            await this.stakingContract.deposit(depositAmount, from(account1));
+        });
+
+        it('8.1. should fail when making a second deposit even after withdrawing', async function () {
+            await time.increase(time.duration.days(30));
+            await this.stakingContract.initiateWithdrawal(from(account1));
+
+            await time.increase(time.duration.days(7));
+            await this.stakingContract.executeWithdrawal(from(account1));
+
+            await this.token.approve(this.stakingContract.address, depositAmount, from(account1));
+            await expectRevert(
+                this.stakingContract.deposit(depositAmount, from(account1)),
+                "[Deposit] You already have a stake"
+            );
+        });
     });
 });

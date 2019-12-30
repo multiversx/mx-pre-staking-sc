@@ -182,7 +182,6 @@ contract StakingContract is Pausable, ReentrancyGuard {
         uint256 reward = _computeReward(stakeDeposit);
 
         stakeDeposit.amount = 0;
-        stakeDeposit.exists = false;
 
         currentTotalStake = currentTotalStake.sub(amount);
         _updateBaseRewardHistory();
