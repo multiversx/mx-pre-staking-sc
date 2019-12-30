@@ -1,4 +1,4 @@
-pragma solidity ^0.5.14;
+pragma solidity 0.5.15;
 
 import "./libs/math/SafeMath.sol";
 import "./libs/math/Math.sol";
@@ -230,18 +230,21 @@ contract StakingContract is Pausable, ReentrancyGuard {
     external
     onlyAfterSetup
     view
-    returns (uint256, uint256)
+    returns (uint256 initialDeposit, uint256 reward)
     {
         require(_stakeDeposits[account].exists, "[Validation] This account doesn't have a stake deposit");
 
-        return (_stakeDeposits[account].amount, _computeReward(_stakeDeposits[account]));
+        StakeDeposit memory stakeDeposit = _stakeDeposits[account];
+        stakeDeposit.endDate = now;
+
+        return (stakeDeposit.amount, _computeReward(stakeDeposit));
     }
 
     function getStakeDeposit()
     external
     onlyAfterSetup
     view
-    returns (uint256, uint256, uint256, uint256, uint256)
+    returns (uint256 amount, uint256 startDate, uint256 endDate, uint256 startCheckpointIndex, uint256 endCheckpointIndex)
     {
         require(_stakeDeposits[msg.sender].exists, "[Validation] This account doesn't have a stake deposit");
         StakeDeposit memory s = _stakeDeposits[msg.sender];
@@ -383,6 +386,11 @@ contract StakingContract is Pausable, ReentrancyGuard {
     {
         uint256 scale = 10 ** 18;
         (uint256 weightedSum, uint256 stakingPeriod) = _computeRewardRatesWeightedSum(stakeDeposit);
+
+        if (stakingPeriod == 0) {
+            return 0;
+        }
+
         // scaling weightedSum and stakingPeriod because the weightedSum is in the thousands magnitude
         // and we risk losing detail while rounding
         weightedSum = weightedSum.mul(scale);

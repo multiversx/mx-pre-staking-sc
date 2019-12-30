@@ -667,4 +667,49 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
             expect(currentStakingLimit).to.be.bignumber.equal(ether(BigNumber(5e+9)));
         });
     });
+
+    describe('7. Calling currentReward before initiating withdrawal', async function () {
+        before(async function () {
+            this.token = await Token.new('ElrondToken', 'ERD', BigNumber(18));
+            this.stakingContract = await StakingContract.new(this.token.address, rewardsAddress);
+            await this.token.mint(rewardsAddress, rewardsAmount);
+            await this.token.mint(account1, depositAmount);
+            // allow staking contract
+            await this.token.approve(this.stakingContract.address, rewardsAmount, from(rewardsAddress));
+            await this.token.approve(this.stakingContract.address, depositAmount, from(account1));
+
+            // setup staking contract
+            await this.stakingContract.setupStakingLimit(
+                stakingConfig.maxAmount, stakingConfig.initialAmount, stakingConfig.daysInterval, stakingConfig.unstakingPeriod
+            );
+            await this.stakingContract.setupRewards(
+                rewardsConfig.multiplier,
+                anualRewardRates,
+                lowerBounds,
+                upperBounds
+            );
+            await this.stakingContract.unpause();
+
+            await this.stakingContract.deposit(depositAmount, from(account1));
+        });
+
+        it('7.1. should return 0 in the first day', async function () {
+            const stake = await this.stakingContract.currentReward(account1);
+
+            expect(stake.initialDeposit).to.be.bignumber.equal(depositAmount);
+            expect(stake.reward).to.be.bignumber.equal(BigNumber(0));
+        });
+
+        it('7.2. should return the current reward without throwing an error', async function () {
+            await time.increase(time.duration.days(10));
+            const stake = await this.stakingContract.currentReward(account1);
+
+            // Result got from the excel simulation '4890.41095890411'
+            const expectedReward = '4890';
+            const actualReward = stake.reward.divRound(ether('1'));
+
+            expect(actualReward.toString()).to.equal(expectedReward);
+        });
+
+    });
 });
