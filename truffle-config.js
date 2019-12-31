@@ -68,9 +68,18 @@ module.exports = {
             provider: () => new HDWalletProvider(testnetMnemonic, `https://ropsten.infura.io/v3/${infuraKey}`),
             network_id: 3,       // Ropsten's id
             gas: 5500000,        // Ropsten has a lower block limit than mainnet
-            confirmations: 2,    // # of confs to wait between deployments. (default: 0)
+            gasPrice: toWei('40', 'gwei'),
+            confirmations: 1,    // # of confs to wait between deployments. (default: 0)
             timeoutBlocks: 200,  // # of blocks before a deployment times out  (minimum/default: 50)
             skipDryRun: true     // Skip dry run before migrations? (default: false for public nets )
+        },
+        rinkeby: {
+            provider: () => new HDWalletProvider(testnetMnemonic, `https://rinkeby.infura.io/v3/${infuraKey}`),
+            network_id: 4,
+            gasPrice: toWei('20', 'gwei'),
+            confirmations: 1,
+            timeoutBlocks: 200,
+            skipDryRun: true
         },
         mainnet: {
             provider: () => new HDWalletProvider(mainnetMnemonic, `https://mainnet.infura.io/v3/${infuraKey}`),
