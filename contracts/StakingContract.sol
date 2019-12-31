@@ -157,7 +157,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
     guardForPrematureWithdrawal
     {
         StakeDeposit storage stakeDeposit = _stakeDeposits[msg.sender];
-        require(stakeDeposit.exists, "[Initiate Withdrawal] There is no stake deposit for this account");
+        require(stakeDeposit.exists && stakeDeposit.amount != 0, "[Initiate Withdrawal] There is no stake deposit for this account");
         require(stakeDeposit.endDate == 0, "[Initiate Withdrawal] You already initiated the withdrawal");
 
         stakeDeposit.endDate = now;
@@ -172,7 +172,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
     onlyAfterSetup
     {
         StakeDeposit storage stakeDeposit = _stakeDeposits[msg.sender];
-        require(stakeDeposit.exists, "[Withdraw] There is no stake deposit for this account");
+        require(stakeDeposit.exists && stakeDeposit.amount != 0, "[Withdraw] There is no stake deposit for this account");
         require(stakeDeposit.endDate != 0, "[Withdraw] Withdraw is not initialized");
         // validate enough days have passed from initiating the withdrawal
         uint256 daysPassed = (now - stakeDeposit.endDate) / 1 days;
@@ -231,7 +231,7 @@ contract StakingContract is Pausable, ReentrancyGuard {
     view
     returns (uint256 initialDeposit, uint256 reward)
     {
-        require(_stakeDeposits[account].exists, "[Validation] This account doesn't have a stake deposit");
+        require(_stakeDeposits[account].exists && _stakeDeposits[account].amount != 0, "[Validation] This account doesn't have a stake deposit");
 
         StakeDeposit memory stakeDeposit = _stakeDeposits[account];
         stakeDeposit.endDate = now;

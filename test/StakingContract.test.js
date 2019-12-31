@@ -714,7 +714,7 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
 
     });
 
-    describe('8. Deposit after executing withdrawal', async function () {
+    describe('8. After executing withdrawal', async function () {
         before(async function () {
             this.token = await Token.new('ElrondToken', 'ERD', BigNumber(18));
             this.stakingContract = await StakingContract.new(this.token.address, rewardsAddress);
@@ -739,7 +739,7 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
             await this.stakingContract.deposit(depositAmount, from(account1));
         });
 
-        it('8.1. should fail when making a second deposit even after withdrawing', async function () {
+        it('8.1. should revert when making a second deposit even after withdrawing', async function () {
             await time.increase(time.duration.days(30));
             await this.stakingContract.initiateWithdrawal(from(account1));
 
@@ -751,6 +751,16 @@ contract('StakingContract', function ([owner, rewardsAddress, unauthorized, acco
                 this.stakingContract.deposit(depositAmount, from(account1)),
                 "[Deposit] You already have a stake"
             );
+        });
+
+        it('8.2. should revert when calling again initiateWithdrawal', async function () {
+            const message = "[Initiate Withdrawal] There is no stake deposit for this account";
+            await expectRevert(this.stakingContract.initiateWithdrawal(from(account1)), message);
+        });
+
+        it('8.3. should revert when calling again executeWithdrawal', async function () {
+            const message = "[Withdraw] There is no stake deposit for this account";
+            await expectRevert(this.stakingContract.executeWithdrawal(from(account1)), message);
         });
     });
 });
