@@ -152,7 +152,7 @@ https://github.com/ElrondNetwork/pre-staking/blob/master/Elrond_SC_audit__stakin
 
 # Deployed Contract
 
-The current version of the contract has been deployed on the Ethereum mainnet and can be found under this address: [insert link]. As a consequence all staking actions and withdrawals will be publicly observable and fully verifiable. If the contract address displayed during staking or withdrawals should ever deviate from this address it is a sign of the website being either fake or compromised. In that case DO NOT INTERACT WITH THE WEBSITE.
+The current version of the contract has been deployed on the Ethereum mainnet and can be found under this address: 0xE9F97FCa1C8C1dDC6649104A6dBCD400D073A445. As a consequence all staking actions and withdrawals will be publicly observable and fully verifiable. If the contract address displayed during staking or withdrawals should ever deviate from this address it is a sign of the website being either fake or compromised. In that case DO NOT INTERACT WITH THE WEBSITE.
 
 # Bug Reporting
 
