@@ -145,11 +145,10 @@ Glossary:
 
 # Certification
 
-The staking contract has been thouroughly tested and reviewed by .... and .... .
+The staking contract has been thouroughly tested and reviewed by several independant third-parties.
 
-Full audit report: 
-- [insert link]
-- [insert link]
+Full audit report from Cyber Unit: 
+https://github.com/ElrondNetwork/pre-staking/blob/master/Elrond_SC_audit__staking_December31.pdf
 
 # Deployed Contract
 
