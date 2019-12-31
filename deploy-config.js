@@ -39,19 +39,21 @@ const anualRewardRates = rewardsConfig.rewardRates.map(rewardRate => rewardRate.
 const lowerBounds = rewardsConfig.rewardRates.map(rewardRate => rewardRate.lowerBound.toString());
 const upperBounds = rewardsConfig.rewardRates.map(rewardRate => rewardRate.upperBound.toString());
 
+// Only used on a testnet
+const rewardsAmount = ether(BigNumber(400e+6));
+
 const ownerAddress = "0x585126227843F8C40A7047d008992E31de1dC7fa";
 const tokenAddress = "";
 const rewardsAddress = "";
-const rewardsAmount = ether(BigNumber(400e+6));
 
 module.exports = {
     stakingConfig,
-    ownerAddress,
-    tokenAddress,
-    rewardsAddress,
     rewardsAmount,
     rewardsConfig,
     anualRewardRates,
     lowerBounds,
-    upperBounds
+    upperBounds,
+    ownerAddress,
+    tokenAddress,
+    rewardsAddress,
 };
