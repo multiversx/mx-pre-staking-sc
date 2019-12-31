@@ -16,13 +16,13 @@ const Token = artifacts.require("Token");
 module.exports = async function (deployer, network, [owner]) {
     let token;
 
-    if (network !== 'mainnet') {
+    if (!network.includes('mainnet')) {
         rewardsAddress = owner;
         await deployer.deploy(Token, 'Elrond Token', 'ERD', '18');
         token = await Token.deployed();
         tokenAddress = Token.address;
 
-        console.log(`Minting ${rewardsAmount.toString()} tokens for address: '${rewardsAddress}'`, '---------------------------');
+        console.log(`Minting ${rewardsAmount.toString()} tokens for address: '${rewardsAddress}'`);
         await token.mint(rewardsAddress, rewardsAmount);
     }
 
@@ -30,7 +30,7 @@ module.exports = async function (deployer, network, [owner]) {
     await deployer.deploy(StakingContract, tokenAddress, rewardsAddress);
     const stakingContract = await StakingContract.deployed();
 
-    if (network !== 'mainnet') {
+    if (!network.includes('mainnet')) {
         console.log(`Approving ${rewardsAmount.toString()} tokens for contract: '${StakingContract.address}'`);
         await token.approve(StakingContract.address, rewardsAmount);
     }
